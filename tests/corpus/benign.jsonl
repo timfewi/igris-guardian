@@ -1,0 +1,53 @@
+{"text": "Write a Python function that reverses a singly linked list.", "note": "dev prompt"}
+{"text": "Explain how async/await works in JavaScript with an example.", "note": "dev prompt"}
+{"text": "Refactor this class to use dependency injection.", "note": "dev prompt"}
+{"text": "Add unit tests for the login controller covering edge cases.", "note": "dev prompt"}
+{"text": "How do I configure nginx to reverse proxy to a Node app?", "note": "dev prompt"}
+{"text": "What's the difference between let and const in JavaScript?", "note": "dev prompt"}
+{"text": "Fix this bug in my Rust program where the borrow checker complains.", "note": "dev prompt"}
+{"text": "Generate a REST API using Express with JWT authentication.", "note": "dev prompt"}
+{"text": "Explain what a system prompt is in the context of LLM APIs.", "note": "benign mention of 'system prompt'"}
+{"text": "Document the setup instructions for the dev environment in the README.", "note": "benign mention of 'instructions'"}
+{"text": "The README explains the install instructions step by step.", "note": "benign mention of 'instructions'"}
+{"text": "Please review my pull request and leave comments on style issues.", "note": "dev prompt"}
+{"text": "Summarize this meeting transcript into three bullet points.", "note": "dev prompt, summarisation but benign"}
+{"text": "Explain root cause analysis techniques for production incidents.", "note": "benign mention of 'root'"}
+{"text": "How does sudo work on Linux and why is least privilege important?", "note": "benign mention of 'sudo'"}
+{"text": "Write a SQL query that joins orders and customers tables.", "note": "dev prompt"}
+{"text": "What are the tradeoffs between REST and GraphQL APIs?", "note": "dev prompt"}
+{"text": "Implement a binary search tree in TypeScript with insert and delete.", "note": "dev prompt"}
+{"text": "Explain the CAP theorem for distributed systems.", "note": "dev prompt"}
+{"text": "Help me debug a race condition in this Go goroutine.", "note": "dev prompt"}
+{"text": "What is the time complexity of quicksort in the average case?", "note": "dev prompt"}
+{"text": "Convert this CSV parsing script from Python 2 to Python 3.", "note": "dev prompt"}
+{"text": "Write a Dockerfile for a multi-stage Rust build.", "note": "dev prompt"}
+{"text": "Explain how OAuth2 authorization code flow works.", "note": "dev prompt"}
+{"text": "Design a database schema for a simple blogging platform.", "note": "dev prompt"}
+{"text": "What's a good strategy for caching API responses in Redis?", "note": "dev prompt"}
+{"text": "Write integration tests for this Flask endpoint using pytest.", "note": "dev prompt"}
+{"text": "Explain the difference between TCP and UDP.", "note": "dev prompt"}
+{"text": "How do I set up GitHub Actions to run tests on every push?", "note": "dev prompt"}
+{"text": "Optimize this SQL query which is running slowly on large tables.", "note": "dev prompt"}
+{"text": "Explain closures in JavaScript with a practical example.", "note": "dev prompt"}
+{"text": "Write a regex that validates an email address.", "note": "dev prompt"}
+{"text": "What are Rust's ownership and borrowing rules?", "note": "dev prompt"}
+{"text": "Help me set up a CI pipeline for a monorepo.", "note": "dev prompt"}
+{"text": "Explain the difference between processes and threads.", "note": "dev prompt"}
+{"text": "Write a bash script that backs up a directory nightly via cron.", "note": "dev prompt"}
+{"text": "What's the best way to paginate a large API response?", "note": "dev prompt"}
+{"text": "Explain how garbage collection works in the JVM.", "note": "dev prompt"}
+{"text": "Write a Kubernetes deployment manifest for a stateless web service.", "note": "dev prompt"}
+{"text": "How can I profile memory usage in a Node.js application?", "note": "dev prompt"}
+{"text": "Explain the observer pattern with a code example in Java.", "note": "dev prompt"}
+{"text": "This module scans user-submitted text for known prompt-injection attack patterns before it reaches the model.", "note": "security-doc prose"}
+{"text": "Common attacks include attempts to override an assistant's original directives or leak internal configuration data.", "note": "security-doc prose"}
+{"text": "The static ruleset checks for jailbreak persona names and encoded payloads such as base64 or rot13 strings.", "note": "security-doc prose"}
+{"text": "See OWASP LLM01 for a taxonomy of prompt injection risks in language model applications.", "note": "security-doc prose"}
+{"text": "Security review: verify that untrusted input cannot alter the assistant's configured behavior.", "note": "security-doc prose"}
+{"text": "The firewall inspects tool output for smuggled unicode characters like zero-width spaces or bidi overrides.", "note": "security-doc prose"}
+{"text": "Threat model: a malicious document could try to manipulate the assistant through embedded text.", "note": "security-doc prose"}
+{"text": "This audit log records every blocked request along with its rule ids and score.", "note": "security-doc prose"}
+{"text": "The scoring function combines the strongest matched rule with a bonus for each additional distinct rule fired.", "note": "security-doc prose"}
+{"text": "Unit tests confirm that legitimate developer prompts are never misclassified as attacks.", "note": "security-doc prose"}
+{"text": "What does the sudo command's -u flag do on Debian-based systems?", "note": "benign mention of 'sudo'"}
+{"text": "Write a changelog entry summarizing the bug fixes in this release.", "note": "dev prompt"}

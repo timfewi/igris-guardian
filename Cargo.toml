@@ -1,0 +1,32 @@
+[package]
+name = "igris-guardian"
+version = "0.1.0"
+edition = "2021"
+description = "Igris Guardian — a prompt-injection firewall. Verdict-only, pass-or-block, incapable of anything else."
+license = "MIT"
+
+[[bin]]
+name = "igris"
+path = "src/main.rs"
+
+[lib]
+name = "igris_guardian"
+path = "src/lib.rs"
+
+[dependencies]
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+unicode-normalization = "0.1"
+sha2 = "0.10"
+base64 = "0.22"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "process"] }
+tempfile = "3"

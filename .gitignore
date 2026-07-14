@@ -1,0 +1,4 @@
+/target
+/.claude/
+.igris-build-workflow.js
+*.bak
