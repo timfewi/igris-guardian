@@ -1,6 +1,7 @@
 //! Igris Guardian entry point. Hand-rolled arg dispatch (3 subcommands, no clap).
 
 use igris_guardian::config::Config;
+use igris_guardian::Trust;
 use igris_guardian::{adapter_hook, adapter_scan, adapter_serve, stage2};
 use std::path::PathBuf;
 
@@ -9,9 +10,14 @@ fn usage() -> ! {
         "igris — prompt-injection firewall\n\
          \n\
          USAGE:\n\
-         \x20 igris scan [--config PATH] [TEXT]   scan stdin/arg, print JSON verdict\n\
+         \x20 igris scan [--config PATH] [--trust user] [TEXT]\n\
+         \x20                                     scan stdin/arg, print JSON verdict\n\
          \x20 igris hook [--config PATH]          Claude Code hook adapter (stdin JSON)\n\
-         \x20 igris serve [--config PATH]         filtering reverse proxy\n"
+         \x20 igris serve [--config PATH]         filtering reverse proxy\n\
+         \n\
+         \x20 --trust user   text the operator typed themselves; countermanding\n\
+         \x20                standing instructions warns instead of blocking.\n\
+         \x20                Defaults to untrusted.\n"
     );
     std::process::exit(64);
 }
@@ -28,7 +34,7 @@ async fn main() {
 
     let cmd = args[0].as_str();
     let rest = &args[1..];
-    let (config_path, positional) = parse_config_flag(rest);
+    let (config_path, trust, positional) = parse_flags(rest);
 
     let cfg = match Config::load(config_path.as_deref()) {
         Ok(c) => c,
@@ -42,7 +48,7 @@ async fn main() {
     }
 
     let code = match cmd {
-        "scan" => adapter_scan::run(cfg, positional.into_iter().next()).await,
+        "scan" => adapter_scan::run(cfg, positional.into_iter().next(), trust).await,
         "hook" => adapter_hook::run(cfg).await,
         "serve" => adapter_serve::run(cfg).await,
         "-h" | "--help" | "help" => usage(),
@@ -51,9 +57,12 @@ async fn main() {
     std::process::exit(code);
 }
 
-/// Extract `--config PATH`, returning it plus any remaining positional args.
-fn parse_config_flag(args: &[String]) -> (Option<PathBuf>, Vec<String>) {
+/// Extract `--config PATH` and `--trust user|untrusted`, returning them plus any
+/// remaining positional args. Trust defaults to untrusted: the safe answer for a
+/// caller that has not thought about provenance.
+fn parse_flags(args: &[String]) -> (Option<PathBuf>, Trust, Vec<String>) {
     let mut config = None;
+    let mut trust = Trust::Untrusted;
     let mut positional = Vec::new();
     let mut i = 0;
     while i < args.len() {
@@ -66,11 +75,21 @@ fn parse_config_flag(args: &[String]) -> (Option<PathBuf>, Vec<String>) {
                     i += 1;
                 }
             }
+            "--trust" => {
+                if i + 1 < args.len() {
+                    if args[i + 1] == "user" {
+                        trust = Trust::User;
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
             other => {
                 positional.push(other.to_string());
                 i += 1;
             }
         }
     }
-    (config, positional)
+    (config, trust, positional)
 }

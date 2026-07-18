@@ -109,6 +109,10 @@ impl Engine {
     ) -> Verdict {
         let mut v = self.scan_stage1(text);
 
+        // The downgrade is final, not provisional: it says this class of evidence
+        // does not apply to this channel at all. Letting it escalate would put the
+        // verdict straight back in front of stage 2, and a fail-closed adapter
+        // would then reinstate the block the operator was just excused from.
         if trust == Trust::User
             && v.action == Action::Block
             && !has_smuggling(&v)
@@ -120,6 +124,8 @@ impl Engine {
                 v.confidence,
                 with(v.reasons, "operator-authored-downgrade"),
             );
+            self.audit.record(source, text, &v, false);
+            return v;
         }
 
         // Stage 1 convicts only on certain evidence, so anything still passing at
