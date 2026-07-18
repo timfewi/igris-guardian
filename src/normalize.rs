@@ -68,10 +68,29 @@ pub fn analyze(text: &str) -> (String, Vec<Finding>) {
 }
 
 /// One-level-deep decoded forms of `text` to rescan (never recursed).
+///
+/// Each transform recovers a keyword an attacker hid behind an encoding a target
+/// model would still read through: percent-escapes and HTML entities render back
+/// to plain text in most surfaces, and confusable-folding defeats homoglyph
+/// substitution (`Ignоrе` with a Cyrillic о and е). The rescan is deliberately
+/// one level deep — decoding recursively would let a crafted blob steer the
+/// scanner — and each variant that actually differs from the input is pushed so
+/// the engine scores it alongside the original.
 pub fn decode_variants(text: &str) -> Vec<String> {
     let mut out = base64_variants(text);
     out.push(rot13(text));
     out.push(leet_demap(text));
+
+    for decoded in [
+        percent_decode(text),
+        html_entity_decode(text),
+        fold_confusables(text),
+    ] {
+        if decoded != text {
+            out.push(decoded);
+        }
+    }
+
     // Invisible-stripped variant: a keyword split by a zero-width/bidi/tag byte
     // (e.g. "ig\u{200B}nore all previous instructions") is invisible to every
     // regex until the smuggling bytes are removed. `analyze` already SCORED their
@@ -82,6 +101,146 @@ pub fn decode_variants(text: &str) -> Vec<String> {
         out.push(stripped);
     }
     out
+}
+
+/// Decode `%XX` percent-escapes (and `+` as space) where they form valid UTF-8;
+/// leaves any malformed escape untouched. Catches `Ignore%20all%20previous...`.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hi = (bytes[i + 1] as char).to_digit(16);
+                let lo = (bytes[i + 2] as char).to_digit(16);
+                if let (Some(h), Some(l)) = (hi, lo) {
+                    out.push((h * 16 + l) as u8);
+                    i += 3;
+                } else {
+                    out.push(bytes[i]);
+                    i += 1;
+                }
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    // Only accept the decode if it is valid UTF-8; otherwise keep the original so a
+    // binary blob full of `%` never produces mojibake that matches nothing useful.
+    String::from_utf8(out).unwrap_or_else(|_| text.to_string())
+}
+
+/// Decode numeric HTML entities (`&#73;`, `&#x49;`) and the handful of named ones
+/// that matter for injection markup (`&lt;`, `&gt;`, `&amp;`, `&quot;`, `&#39;`).
+/// Catches `&#73;&#103;&#110;&#111;&#114;&#101;` = "Ignore".
+fn html_entity_decode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        let tail = &rest[amp..];
+        let end = tail.find(';').filter(|&e| e <= 10);
+        match end.and_then(|e| decode_entity(&tail[1..e]).map(|c| (c, e))) {
+            Some((c, e)) => {
+                out.push(c);
+                rest = &tail[e + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn decode_entity(body: &str) -> Option<char> {
+    let cp = if let Some(hex) = body.strip_prefix("#x").or_else(|| body.strip_prefix("#X")) {
+        u32::from_str_radix(hex, 16).ok()?
+    } else if let Some(dec) = body.strip_prefix('#') {
+        dec.parse().ok()?
+    } else {
+        return match body {
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "amp" => Some('&'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            _ => None,
+        };
+    };
+    char::from_u32(cp)
+}
+
+/// Fold the common Latin-lookalike Cyrillic and Greek letters back to ASCII so a
+/// homoglyph-substituted keyword matches. Only unambiguous single-letter
+/// lookalikes are mapped; this is intentionally small, since over-folding would
+/// corrupt legitimate non-Latin text.
+fn fold_confusables(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            // Cyrillic → Latin
+            'а' => 'a',
+            'е' => 'e',
+            'о' => 'o',
+            'р' => 'p',
+            'с' => 'c',
+            'х' => 'x',
+            'у' => 'y',
+            'і' => 'i',
+            'ѕ' => 's',
+            'ԁ' => 'd',
+            'һ' => 'h',
+            'ј' => 'j',
+            'А' => 'A',
+            'Е' => 'E',
+            'О' => 'O',
+            'Р' => 'P',
+            'С' => 'C',
+            'Х' => 'X',
+            'В' => 'B',
+            'Н' => 'H',
+            'К' => 'K',
+            'М' => 'M',
+            'Т' => 'T',
+            // Greek → Latin. Folding here can only add a rescan variant, never
+            // change how the original scores, so the lowercase lookalikes are safe
+            // to include even though they are not perfect glyph matches.
+            'ο' => 'o',
+            'ρ' => 'p',
+            'α' => 'a',
+            'ν' => 'v',
+            'ε' => 'e',
+            'ι' => 'i',
+            'κ' => 'k',
+            'τ' => 't',
+            'υ' => 'u',
+            'χ' => 'x',
+            'γ' => 'y',
+            'ϲ' => 'c',
+            'Ι' => 'I',
+            'Α' => 'A',
+            'Ο' => 'O',
+            'Ρ' => 'P',
+            'Ε' => 'E',
+            'Τ' => 'T',
+            'Κ' => 'K',
+            'Β' => 'B',
+            'Η' => 'H',
+            'Μ' => 'M',
+            'Ν' => 'N',
+            'Χ' => 'X',
+            other => other,
+        })
+        .collect()
 }
 
 /// Remove zero-width, bidi-control, and tag-block characters. Same ranges
@@ -160,4 +319,45 @@ fn leet_demap(text: &str) -> String {
             other => other,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn percent_decode_recovers_text_and_leaves_malformed() {
+        assert_eq!(percent_decode("a%20b+c"), "a b c");
+        // A lone/malformed escape is left as-is, not dropped.
+        assert_eq!(percent_decode("100%done %zz"), "100%done %zz");
+        // Invalid UTF-8 decode falls back to the original.
+        assert_eq!(percent_decode("%ff%fe"), "%ff%fe");
+    }
+
+    #[test]
+    fn html_entity_decode_handles_dec_hex_named() {
+        assert_eq!(html_entity_decode("&#73;&#103;&#110;"), "Ign");
+        assert_eq!(html_entity_decode("&#x49;&#x67;"), "Ig");
+        assert_eq!(html_entity_decode("&lt;system&gt;"), "<system>");
+        // A bare ampersand and an unknown entity survive untouched.
+        assert_eq!(html_entity_decode("a & b &nope;"), "a & b &nope;");
+    }
+
+    #[test]
+    fn fold_confusables_maps_cyrillic_and_greek() {
+        // "Ignоrе" with a Cyrillic о (U+043E) and е (U+0435) folds to ASCII.
+        assert_eq!(fold_confusables("Ign\u{043E}r\u{0435}"), "Ignore");
+        // Pure ASCII is unchanged.
+        assert_eq!(fold_confusables("Ignore"), "Ignore");
+    }
+
+    #[test]
+    fn decode_variants_only_emits_differing_forms() {
+        // A plain-ASCII string with no encoding yields no percent/html/fold variant
+        // equal to itself (they are only pushed when they differ).
+        let v = decode_variants("hello world");
+        assert!(v
+            .iter()
+            .all(|s| s != "hello world" || v.iter().filter(|x| *x == "hello world").count() <= 1));
+    }
 }

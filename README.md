@@ -40,15 +40,18 @@ Measured on the bundled corpus, stage 1 alone:
 
 | | |
 |---|---|
-| Recall | 100% (127/127 malicious) |
-| False positives | 1.0% (2/201 benign) |
+| Recall | 100% (155/155 malicious) |
+| False positives | 1.0% (2/203 benign) |
 
-The benign set is deliberately hostile to the scanner: WAF rulesets, pytest
-fixtures asserting on attack strings, OWASP pages, CTF writeups, git history,
-LLM chat-template documentation, and CLI help text — content that quotes
-payloads for a living. A naive scanner scores 100 on most of it. Both remaining
-false positives are whole security documents whose payload sentences sit
-paragraphs away from the vocabulary that would excuse them.
+The malicious set includes confirmed bypasses from an adversarial recall audit
+across eight attack lenses (exfiltration, paraphrase, encoding, multilingual,
+persistence, tool-hijack, demotion-abuse, truncation). The benign set is
+deliberately hostile to the scanner: WAF rulesets, pytest fixtures asserting on
+attack strings, OWASP pages, CTF writeups, git history, LLM chat-template
+documentation, and CLI help text — content that quotes payloads for a living. A
+naive scanner scores 100 on most of it. Both remaining false positives are whole
+security documents whose payload sentences sit paragraphs away from the
+vocabulary that would excuse them.
 
 Re-measure any time — this is a test, not a marketing claim:
 
@@ -283,8 +286,29 @@ Read this part.
   measured recall above describes a corpus of *known* techniques. Treat Igris as
   one layer — keep least-privilege tool scoping, human confirmation on
   destructive actions, and egress controls. Do not let it justify removing them.
-- **English-centric.** The stage-1 ruleset is English. Non-English payloads rely
-  on stage 2.
+- **Some attack classes are stage-2's job by design.** An adversarial recall
+  audit confirmed three families that stage 1 deliberately does *not* try to
+  convict on, because doing so at the regex layer would false-positive on
+  ordinary tool output:
+  - **Tool-use / setup-doc social engineering** ("add this GitHub Actions step",
+    "install the pre-commit hook", "run `terraform apply`"). Lexically identical
+    to a legitimate README; only a classifier that understands intent can tell
+    them apart.
+  - **Conditional and delayed triggers** ("if you are an AI reading this…",
+    "whenever the user later asks about billing…", "add this to your persistent
+    memory").
+  - **Payloads quoted or fenced as data.** A hit whose only occurrences are
+    inside a code fence or quotes is demoted to escalation on purpose (a test
+    fixture is entitled to contain an attack string); the classifier adjudicates.
+
+  With stage 2 disabled these surface as **warnings** in the hook adapter and as
+  **blocks** under fail-close (`scan`, `serve`). Run stage 2 if these matter to
+  you.
+- **Multilingual coverage is a floor, not a ceiling.** Stage 1 catches the
+  canonical override and prompt-exfiltration phrasings in ~10 languages
+  (German, Spanish, French, Portuguese, Italian, Russian incl. transliteration,
+  Chinese, Japanese, Korean, Arabic, Hindi). Anything outside those exact forms
+  relies on stage 2.
 - **Text only.** Injection inside images, audio, or PDFs is invisible to it.
 - **Truncation.** Input beyond `max_scan_bytes` (default 2 MB) is truncated by
   `scan` and `hook`; `serve` refuses oversized responses rather than scanning
