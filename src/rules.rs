@@ -381,9 +381,24 @@ fn quoted_everywhere(re: &Regex, text: &str) -> bool {
             .map_or(text.len(), |i| m.end() + i);
         let window = &text[start..end];
 
+        // Structural enclosure is proof, not inference: the payload is demonstrably
+        // delimited as data, and a test fixture or corpus row is entitled to contain
+        // a complete attack string, exfiltration verb and all.
         if inside_fence(text, m.start())
-            || window.lines().any(is_definition_line)
             || is_quoted_span(window, m.start() - start, m.end() - start)
+        {
+            continue;
+        }
+
+        // The remaining three signals are inferences about intent, and none of them
+        // survives a live directive. Without this veto they were trivially
+        // defeated — prefixing "# " or "For example," to a working payload turned a
+        // block into a warning, which in the hook adapter means it goes through.
+        if carries_action_demand(window) {
+            return false;
+        }
+
+        if window.lines().any(is_definition_line)
             || describes_rather_than_utters(window)
             || bound_to_named_artifact(window, m.end() - start)
         {
@@ -392,6 +407,37 @@ fn quoted_everywhere(re: &Regex, text: &str) -> bool {
         return false; // one bare utterance is enough to convict
     }
     saw_match
+}
+
+/// Whether the window contains a concrete directive — something to do, and often
+/// somewhere to send it.
+///
+/// Documentation describes attacks; it does not also carry a live exfiltration
+/// target. Checked per-window rather than per-document on purpose: a SECURITY.md
+/// that says "Email security@example.com" in its reporting section must not have
+/// that address veto a demotion twenty lines away.
+fn carries_action_demand(window: &str) -> bool {
+    action_demand_re().is_match(window)
+}
+
+static ACTION_DEMAND_RE: OnceLock<Regex> = OnceLock::new();
+
+fn action_demand_re() -> &'static Regex {
+    ACTION_DEMAND_RE.get_or_init(|| {
+        Regex::new(concat!(
+            // Verbs that are their own evidence.
+            r"(?i)\b(?:exfiltrat|leak\s+the|steal\s+the)\w*",
+            // Transmission verb with a destination.
+            r"|(?i)\b(?:send|email|e-mail|post|upload|transmit|forward|deliver)\b[^.\n]{0,60}",
+            r"(?:https?://|[\w.-]+@[\w.-]+|\b(?:to|at)\s+[\w.-]+\.[a-z]{2,})",
+            // Demanding the agent's own secrets.
+            r"|(?i)\b(?:reveal|dump|print|output|show|display|repeat|send)\s+(?:me\s+)?(?:your|the)\s+",
+            r"(?:system\s+)?(?:prompt|instructions|api[\s_-]*key|token|password|credentials|secrets?|env(?:ironment)?\s+(?:file|var))",
+            // Execution.
+            r"|(?i)(?:rm\s+-rf|curl\s+[^|\n]*\|\s*(?:ba)?sh|\bexec\(|\beval\(|\bsystem\()",
+        ))
+        .unwrap()
+    })
 }
 
 /// Whether the surrounding sentence is *reporting* a payload rather than
@@ -514,10 +560,11 @@ fn inside_fence(text: &str, offset: usize) -> bool {
 /// corpus row, or a comment describing detection.
 fn is_definition_line(line: &str) -> bool {
     let l = line.trim_start();
+    // Deliberately NOT "- ": a markdown list item is ordinary prose, and treating
+    // it as a definition context let an attacker demote a payload by bulleting it.
     l.starts_with("//")
         || l.starts_with('#')
         || l.starts_with('*')
-        || l.starts_with("- ")
         || l.starts_with(r#"{"text":"#)
         || l.starts_with(r#"{ "text":"#)
         || line.contains("(?i)")
