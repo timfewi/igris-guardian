@@ -193,6 +193,16 @@ fn build_rules() -> Vec<CompiledRule> {
             70,
             r"(?i)(DAN|DUDE|STAN|JAILBREAK|MARY|SANTACLAUS|hypothetical).{0,30}(response|answer|mode)",
         ),
+        // Direct assignment of a known jailbreak persona. The generic
+        // `jailbreak-persona-mode` above needs a trailing "mode"/"answer"/"response",
+        // so bare "you are DAN" — the actual canonical form — slipped past it.
+        // The persona token is matched case-sensitively on purpose: "you are DAN"
+        // is the jailbreak, "you are Dan" is someone addressing a colleague.
+        certain(
+            "jailbreak-persona-assign",
+            85,
+            r"(?i)you\s+are\s+(?:now\s+)?(?-i:DAN|STAN|AIM|DUDE|KEVIN)\b|(?i)you\s+are\s+(?:now\s+)?in\s+developer\s+mode",
+        ),
         ambiguous(
             "jailbreak-guidelines-ref",
             70,
@@ -558,6 +568,7 @@ fn category(id: &str) -> Option<Category> {
         | "instr-reveal-prompt" => Category::Override,
 
         "jailbreak-persona-mode"
+        | "jailbreak-persona-assign"
         | "jailbreak-guidelines-ref"
         | "jailbreak-filter-bypass"
         | "role-theft-admin" => Category::Jailbreak,
@@ -617,3 +628,21 @@ pub fn aggregate(hits: &std::collections::BTreeMap<String, Hit>) -> (u8, Vec<Str
 
 /// Synthesised reason id emitted when [`decisive_combination`] convicts.
 pub const COMBO_FORGED_TURN: &str = "combo-forged-system-turn";
+
+/// Whether every fired rule is something the operator is entitled to say to their
+/// own agent.
+///
+/// Countermanding standing instructions is meaningless as an *attack* when the
+/// person doing it owns the system prompt — they could just edit it. But a
+/// forged system turn, a jailbreak persona, or a demand that the agent run
+/// something are about what the model is induced to *do*, and stay meaningful no
+/// matter who typed them. Only the first kind is a prerogative.
+pub fn only_operator_prerogative(reasons: &[String]) -> bool {
+    !reasons.iter().any(|r| {
+        r == COMBO_FORGED_TURN
+            || matches!(
+                category(r),
+                Some(Category::Authority) | Some(Category::Jailbreak) | Some(Category::Action)
+            )
+    })
+}

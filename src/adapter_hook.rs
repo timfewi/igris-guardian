@@ -6,7 +6,7 @@
 
 use crate::config::Config;
 use crate::engine::Engine;
-use crate::{Action, FailMode, Verdict};
+use crate::{Action, FailMode, Trust, Verdict};
 use serde_json::Value;
 use std::io::Read;
 
@@ -47,7 +47,10 @@ async fn handle_user_prompt_submit(engine: &Engine, data: &Value) -> i32 {
     };
 
     let verdict = engine
-        .scan(prompt, "user-prompt", FailMode::DegradeStage1)
+        // The operator typed this. Phrasing alone must not lock them out of their
+        // own session; smuggled control characters still block, since those mean
+        // the text was pasted from somewhere they do not control.
+        .scan_trusted(prompt, "user-prompt", Trust::User, FailMode::DegradeStage1)
         .await;
     match verdict.action {
         Action::Block => {

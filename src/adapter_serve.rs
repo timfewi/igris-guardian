@@ -7,7 +7,7 @@
 
 use crate::config::Config;
 use crate::engine::Engine;
-use crate::{Action, FailMode};
+use crate::{Action, FailMode, Trust};
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Incoming};
 use hyper::header::{self, HeaderName};
@@ -221,8 +221,17 @@ async fn scan_endpoint(engine: &Engine, body: &Bytes) -> Response<Full<Bytes>> {
         .get("source")
         .and_then(|s| s.as_str())
         .unwrap_or("serve:scan");
+    // Callers that can distinguish their own operator's input from retrieved
+    // content should say so; defaulting to untrusted keeps the safe answer for
+    // callers that cannot.
+    let trust = match v.get("trust").and_then(|t| t.as_str()) {
+        Some("user") => Trust::User,
+        _ => Trust::Untrusted,
+    };
 
-    let verdict = engine.scan(text, source, FailMode::Close).await;
+    let verdict = engine
+        .scan_trusted(text, source, trust, FailMode::Close)
+        .await;
     json_response(200, serde_json::to_value(&verdict).unwrap_or_default())
 }
 

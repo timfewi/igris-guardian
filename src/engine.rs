@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::normalize;
 use crate::rules::RuleSet;
 use crate::stage2::{self, Classification};
-use crate::{Action, Confidence, FailMode, Verdict};
+use crate::{Action, Confidence, FailMode, Trust, Verdict};
 
 pub struct Engine {
     rules: RuleSet,
@@ -81,8 +81,46 @@ impl Engine {
     }
 
     /// Full scan including stage-2 escalation. `source` labels the audit line.
+    ///
+    /// Most callers want [`Trust::Untrusted`]; see [`Engine::scan_trusted`].
     pub async fn scan(&self, text: &str, source: &str, fail_mode: FailMode) -> Verdict {
+        self.scan_trusted(text, source, Trust::Untrusted, fail_mode)
+            .await
+    }
+
+    /// As [`Engine::scan`], but told where the text came from.
+    ///
+    /// [`Trust::User`] text is not blocked for merely countermanding standing
+    /// instructions — the operator owns the system prompt and could edit it
+    /// directly, so doing it by sentence is a prerogative, not an attack. It still
+    /// blocks on:
+    ///
+    /// - unicode smuggling, because invisible control characters are not something
+    ///   a person types; their presence means the text was pasted from somewhere
+    ///   the operator does not control, which puts it back on the untrusted side;
+    /// - jailbreak, forged-authority and action-demand evidence, which is about
+    ///   what the model is induced to do and stays meaningful whoever typed it.
+    pub async fn scan_trusted(
+        &self,
+        text: &str,
+        source: &str,
+        trust: Trust,
+        fail_mode: FailMode,
+    ) -> Verdict {
         let mut v = self.scan_stage1(text);
+
+        if trust == Trust::User
+            && v.action == Action::Block
+            && !has_smuggling(&v)
+            && crate::rules::only_operator_prerogative(&v.reasons)
+        {
+            v = Verdict::new(
+                v.score,
+                Action::Warn,
+                v.confidence,
+                with(v.reasons, "operator-authored-downgrade"),
+            );
+        }
 
         // Stage 1 convicts only on certain evidence, so anything still passing at
         // or above the escalate threshold wants a second opinion. The case that
@@ -167,6 +205,15 @@ fn unadjudicated(v: Verdict, fail_mode: FailMode) -> Verdict {
 fn with(mut reasons: Vec<String>, reason: &str) -> Vec<String> {
     reasons.push(reason.to_string());
     reasons
+}
+
+/// Whether a verdict rests on unicode smuggling — invisible characters that a
+/// person does not type, so their presence survives the operator-authored
+/// downgrade.
+fn has_smuggling(v: &Verdict) -> bool {
+    v.reasons
+        .iter()
+        .any(|r| matches!(r.as_str(), "zero-width" | "bidi-override" | "tag-block"))
 }
 
 /// Truncate to a byte cap on a char boundary.

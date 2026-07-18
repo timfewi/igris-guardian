@@ -77,6 +77,28 @@ impl Verdict {
     }
 }
 
+/// Where a piece of text came from, which decides whether overriding the agent
+/// is an attack or a prerogative.
+///
+/// Prompt injection is a confused-deputy problem: it matters because *untrusted*
+/// content reaches a channel the operator's instructions occupy. An operator
+/// typing "ignore the previous instructions, start over" to their own agent is
+/// not attacking anyone — they could edit the system prompt directly. Scanning
+/// their keystrokes with the same severity as a fetched web page produces
+/// nothing but false positives, and a firewall that fights its own operator gets
+/// switched off.
+///
+/// Set by the adapter from provenance it already knows. There is deliberately no
+/// config key for it: it is a property of the channel, not a preference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trust {
+    /// Authored by the operator in their own session.
+    User,
+    /// Arrived from a tool result, a fetched page, a file, an MCP server, or an
+    /// upstream model. The actual prompt-injection threat surface.
+    Untrusted,
+}
+
 /// How an adapter wants the engine to behave when stage 2 cannot render a verdict.
 ///
 /// Set by the adapter, never by config — this is a safety property, not a knob.
