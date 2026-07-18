@@ -14,10 +14,11 @@ use std::time::SystemTime;
 
 pub struct Audit {
     path: PathBuf,
+    excerpt: bool,
 }
 
 impl Audit {
-    pub fn open(path: &Path) -> Audit {
+    pub fn open(path: &Path, excerpt: bool) -> Audit {
         // Ensure parent dir exists.
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
@@ -26,12 +27,14 @@ impl Audit {
         }
         Audit {
             path: path.to_path_buf(),
+            excerpt,
         }
     }
 
-    /// Append one JSONL record. Carries a sha256 of the scanned `text` for
-    /// content-correlation across events, plus a short escaped excerpt — never the
-    /// full content.
+    /// Append one JSONL record. Always carries a sha256 of the scanned `text` for
+    /// content-correlation across events; carries a 200-character excerpt only
+    /// when `audit_excerpt` is enabled, because scanned content routinely contains
+    /// credentials.
     pub fn record(&self, source: &str, text: &str, verdict: &Verdict, stage2_used: bool) {
         // Use Unix timestamp (seconds since epoch) for simplicity and determinism.
         let ts = SystemTime::now()
@@ -44,19 +47,22 @@ impl Audit {
             digest.iter().map(|b| format!("{b:02x}")).collect::<String>()
         };
 
-        // Excerpt: first 200 chars of the scanned text (char-boundary safe).
-        let excerpt: String = text.chars().take(200).collect();
-
-        let record = json!({
+        let mut record = json!({
             "ts": ts,
             "source": source,
             "action": verdict.action,
             "score": verdict.score,
+            "confidence": verdict.confidence,
             "rules": verdict.reasons,
             "stage2": stage2_used,
             "sha256": sha256_hex,
-            "excerpt": excerpt,
         });
+
+        if self.excerpt {
+            // First 200 chars, char-boundary safe.
+            let excerpt: String = text.chars().take(200).collect();
+            record["excerpt"] = json!(excerpt);
+        }
 
         if let Ok(mut file) = OpenOptions::new()
             .create(true)

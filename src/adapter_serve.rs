@@ -89,6 +89,21 @@ async fn handle(
 
     let path = parts.uri.path().to_string();
     let is_post = parts.method == Method::POST;
+
+    // Direct classification, for callers that are not proxying an LLM API at all:
+    // any harness can POST text here and act on the verdict itself, instead of
+    // spawning `igris scan` per item. Intercepted before forwarding so it is never
+    // mistaken for an upstream route.
+    if is_post && path == "/scan" {
+        return Ok(scan_endpoint(&engine, &body_bytes).await);
+    }
+    if parts.method == Method::GET && path == "/health" {
+        return Ok(json_response(
+            200,
+            json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")}),
+        ));
+    }
+
     let is_messages_route = is_post && path == "/v1/messages";
     let is_chat_route = is_post && path.ends_with("/chat/completions");
     // Legacy generation routes (Anthropic /v1/complete, OpenAI /v1/completions)
@@ -180,6 +195,32 @@ async fn handle(
 
     // Pass: replay upstream bytes/status/headers byte-identical.
     Ok(build_response(status, &resp_headers, resp_bytes))
+}
+
+/// `POST /scan` — classify a body of text and return the verdict verbatim.
+///
+/// Request:  `{"text": "...", "source": "optional-label"}`
+/// Response: the [`crate::Verdict`] JSON, always 200 — a verdict of "block" is a
+/// successful classification, not a request error, so callers can parse one shape.
+/// Over-cap bodies are rejected rather than silently truncated, matching the
+/// proxy's refusal to render a verdict on text it did not fully read.
+async fn scan_endpoint(engine: &Engine, body: &Bytes) -> Response<Full<Bytes>> {
+    let Ok(v) = serde_json::from_slice::<Value>(body) else {
+        return json_response(400, json!({"error": "body must be JSON"}));
+    };
+    let Some(text) = v.get("text").and_then(|t| t.as_str()) else {
+        return json_response(400, json!({"error": "missing string field: text"}));
+    };
+    if text.len() > engine.config().max_scan_bytes {
+        return json_response(413, json!({"error": "text exceeds max_scan_bytes"}));
+    }
+    let source = v
+        .get("source")
+        .and_then(|s| s.as_str())
+        .unwrap_or("serve:scan");
+
+    let verdict = engine.scan(text, source, FailMode::Close).await;
+    json_response(200, serde_json::to_value(&verdict).unwrap_or_default())
 }
 
 /// Length-independent, short-circuit-free byte comparison for the bearer token.

@@ -17,7 +17,7 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(cfg: Config) -> Engine {
-        let audit = Audit::open(&cfg.audit_path());
+        let audit = Audit::open(&cfg.audit_path(), cfg.audit_excerpt);
         Engine {
             rules: RuleSet::load(),
             cfg,
