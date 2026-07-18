@@ -40,8 +40,15 @@ Measured on the bundled corpus, stage 1 alone:
 
 | | |
 |---|---|
-| Recall | 100% (121/121 malicious) |
-| False positives | 0% (0/53 benign) |
+| Recall | 100% (127/127 malicious) |
+| False positives | 1.0% (2/201 benign) |
+
+The benign set is deliberately hostile to the scanner: WAF rulesets, pytest
+fixtures asserting on attack strings, OWASP pages, CTF writeups, git history,
+LLM chat-template documentation, and CLI help text — content that quotes
+payloads for a living. A naive scanner scores 100 on most of it. Both remaining
+false positives are whole security documents whose payload sentences sit
+paragraphs away from the vocabulary that would excuse them.
 
 Re-measure any time — this is a test, not a marketing claim:
 
