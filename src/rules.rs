@@ -493,7 +493,7 @@ fn describes_rather_than_utters(window: &str) -> bool {
         // what the attacker's text does to the model, and needs a word for the
         // model to do it to.
         "tries to",
-        "attempts to",
+        "attempt to",
         "told to",
         "the assistant to",
         "the model to",
