@@ -5,14 +5,16 @@
 //! `decode_variants` yields one-level-deep decoded forms (base64/rot13/leetspeak)
 //! for the engine to rescan.
 
+use crate::rules::Tier;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use unicode_normalization::UnicodeNormalization;
 
-/// A unicode smuggling finding, expressed as a rule id + weight so the engine
-/// folds it into the same scoring as static rules.
+/// A unicode smuggling finding, expressed as a rule id + weight + tier so the
+/// engine folds it into the same scoring as static rules.
 pub struct Finding {
     pub id: &'static str,
     pub weight: u8,
+    pub tier: crate::rules::Tier,
 }
 
 /// Returns `(nfkc_text, findings)`.
@@ -33,15 +35,20 @@ pub fn analyze(text: &str) -> (String, Vec<Finding>) {
         }
     }
 
+    // Zero-width and bidi controls have legitimate uses — ZWJ in emoji sequences,
+    // ZWNJ in Persian/Arabic/Indic scripts, RLM/LRM in mixed-direction text — so
+    // their presence alone corroborates rather than convicts. Unicode tag
+    // characters (U+E0000..U+E007F) have no legitimate use in agent-visible text
+    // and exist in the wild essentially only to smuggle instructions.
     let mut findings = Vec::new();
     if has_zero_width {
-        findings.push(Finding { id: "zero-width", weight: 40 });
+        findings.push(Finding { id: "zero-width", weight: 40, tier: Tier::Ambiguous });
     }
     if has_bidi {
-        findings.push(Finding { id: "bidi-override", weight: 40 });
+        findings.push(Finding { id: "bidi-override", weight: 40, tier: Tier::Ambiguous });
     }
     if has_tag_block {
-        findings.push(Finding { id: "tag-block", weight: 70 });
+        findings.push(Finding { id: "tag-block", weight: 70, tier: Tier::Certain });
     }
 
     let nfkc: String = text.nfkc().collect();

@@ -31,6 +31,21 @@ pub enum Action {
     Block,
 }
 
+/// How much the evidence behind a [`Verdict`] can be trusted.
+///
+/// Exposed in the JSON output so a caller can choose its own posture: block on
+/// `Ambiguous` if it is a hardened proxy, annotate-only if it is an editor
+/// integration where a false positive costs more than a miss.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Confidence {
+    /// At least one detection fired that benign text essentially never produces.
+    Certain,
+    /// Only corroborating signals fired — patterns that legitimately occur in
+    /// documentation, source code, and ordinary speech.
+    Ambiguous,
+}
+
 /// The single output type of the entire system.
 #[derive(Debug, Clone, Serialize)]
 pub struct Verdict {
@@ -39,23 +54,26 @@ pub struct Verdict {
     /// 0–100 aggregate risk score.
     pub score: u8,
     pub action: Action,
+    /// Strength of the evidence, independent of `score`.
+    pub confidence: Confidence,
     /// Rule ids and/or the stage-2 reason. Never contains scanned content verbatim.
     pub reasons: Vec<String>,
 }
 
 impl Verdict {
-    pub fn new(score: u8, action: Action, reasons: Vec<String>) -> Self {
+    pub fn new(score: u8, action: Action, confidence: Confidence, reasons: Vec<String>) -> Self {
         Verdict {
             safe: action != Action::Block,
             score,
             action,
+            confidence,
             reasons,
         }
     }
 
     /// A clean pass with no findings.
     pub fn pass() -> Self {
-        Verdict::new(0, Action::Pass, Vec::new())
+        Verdict::new(0, Action::Pass, Confidence::Ambiguous, Vec::new())
     }
 }
 

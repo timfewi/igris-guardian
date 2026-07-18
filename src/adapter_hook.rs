@@ -108,7 +108,12 @@ async fn handle_post_tool_use(engine: &Engine, data: &Value) -> i32 {
     if tool_name == "Read" && verdict.action == Action::Block {
         if let Some(fp) = tool_input.get("file_path").and_then(|v| v.as_str()) {
             if is_excluded_path(fp) {
-                verdict = Verdict::new(verdict.score, Action::Warn, verdict.reasons);
+                verdict = Verdict::new(
+                    verdict.score,
+                    Action::Warn,
+                    verdict.confidence,
+                    verdict.reasons,
+                );
             }
         }
     }
