@@ -1,3 +1,5 @@
+![Igris Guardian](public/images/igris-readme-banner.png)
+
 # Igris Guardian
 
 A prompt-injection firewall for agentic systems. It reads untrusted text and
