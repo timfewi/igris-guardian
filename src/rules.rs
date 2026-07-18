@@ -80,21 +80,57 @@ fn build_rules() -> Vec<CompiledRule> {
         // --- exact INJECTION_PATTERNS (14), from gsd-read-injection-scanner.js ---
         // The canonical override payloads. Outside a quoting context (see
         // `definition_context`) these read as imperatives aimed at the agent.
-        certain("instr-ignore-previous", 85, r"(?i)ignore\s+(all\s+)?previous\s+instructions"),
-        certain("instr-ignore-above", 85, r"(?i)ignore\s+(all\s+)?above\s+instructions"),
-        certain("instr-disregard-previous", 85, r"(?i)disregard\s+(all\s+)?previous"),
-        certain("instr-forget-instructions", 85, r"(?i)forget\s+(all\s+)?(your\s+)?instructions"),
-        certain("instr-override-system", 85, r"(?i)override\s+(system|previous)\s+(prompt|instructions)"),
-        certain("instr-you-are-now", 85, r"(?i)you\s+are\s+now\s+(?:a|an|the)\s+"),
+        certain(
+            "instr-ignore-previous",
+            85,
+            r"(?i)ignore\s+(all\s+)?previous\s+instructions",
+        ),
+        certain(
+            "instr-ignore-above",
+            85,
+            r"(?i)ignore\s+(all\s+)?above\s+instructions",
+        ),
+        certain(
+            "instr-disregard-previous",
+            85,
+            r"(?i)disregard\s+(all\s+)?previous",
+        ),
+        certain(
+            "instr-forget-instructions",
+            85,
+            r"(?i)forget\s+(all\s+)?(your\s+)?instructions",
+        ),
+        certain(
+            "instr-override-system",
+            85,
+            r"(?i)override\s+(system|previous)\s+(prompt|instructions)",
+        ),
+        certain(
+            "instr-you-are-now",
+            85,
+            r"(?i)you\s+are\s+now\s+(?:a|an|the)\s+",
+        ),
         // "act as a/an/the <word>" excluding plan/phase/wave — handled below (no lookahead in `regex`).
-        certain("instr-pretend", 85, r"(?i)pretend\s+(?:you(?:'re| are)\s+|to\s+be\s+)"),
-        certain("instr-from-now-on", 85, r"(?i)from\s+now\s+on,?\s+you\s+(?:are|will|should|must)"),
+        certain(
+            "instr-pretend",
+            85,
+            r"(?i)pretend\s+(?:you(?:'re| are)\s+|to\s+be\s+)",
+        ),
+        certain(
+            "instr-from-now-on",
+            85,
+            r"(?i)from\s+now\s+on,?\s+you\s+(?:are|will|should|must)",
+        ),
         certain(
             "instr-reveal-prompt",
             85,
             r"(?i)(?:print|output|reveal|show|display|repeat)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions)",
         ),
-        certain("instr-fake-role-tags", 85, r"(?i)</?(?:system|assistant|human)>"),
+        certain(
+            "instr-fake-role-tags",
+            85,
+            r"(?i)</?(?:system|assistant|human)>",
+        ),
         // `[SYSTEM]` is ubiquitous in ordinary log output ("[SYSTEM] service started"),
         // so it cannot block alone — unlike the llama-template tags below, which are
         // vanishingly rare outside a chat template or an attack.
@@ -124,9 +160,17 @@ fn build_rules() -> Vec<CompiledRule> {
             85,
             r"(?i)(?:ignore|disregard|forget|override|discard)\s+(?:all\s+)?(?:of\s+)?(?:your|the|my|these|those|any)?\s*(?:(?:previous|prior|earlier|above|preceding|original|initial|system|standing|safety)\s+)?(?:instructions?|directives?)|(?:ignore|disregard|forget|override|discard)\s+(?:all\s+)?(?:your|the|my|these|those|any)?\s*(?:previous|prior|earlier|above|preceding|original|initial|system|standing|safety)\s+(?:rules?|guidelines?)",
         ),
-        certain("instr-ignore-everything-above", 85, r"(?i)ignore everything above"),
+        certain(
+            "instr-ignore-everything-above",
+            85,
+            r"(?i)ignore everything above",
+        ),
         certain("instr-new-system-prompt", 85, r"(?i)new system prompt:"),
-        certain("instr-you-are-free", 85, r"(?i)you\s+are\s+a\s+free\s+agent|you\s+are\s+not\s+bound"),
+        certain(
+            "instr-you-are-free",
+            85,
+            r"(?i)you\s+are\s+a\s+free\s+agent|you\s+are\s+not\s+bound",
+        ),
         // Reassignment to an explicitly unconstrained persona. The generic
         // "act as a <role>" is ordinary English and stays weak; naming the role as
         // unrestricted/uncensored/jailbroken is not something benign text does.
@@ -399,7 +443,12 @@ impl RuleSet {
             hits.push(demote_if_quoted(
                 // "act as a reverse proxy", "act as a tiebreaker" — overwhelmingly
                 // benign English. Scores, never convicts, never combines.
-                Hit { id: "instr-act-as", weight: 45, tier: Tier::Ambiguous, quoted: false },
+                Hit {
+                    id: "instr-act-as",
+                    weight: 45,
+                    tier: Tier::Ambiguous,
+                    quoted: false,
+                },
                 act_as_re(),
                 text,
             ));
@@ -435,7 +484,11 @@ fn demote_if_quoted(hit: Hit, re: &Regex, text: &str) -> Hit {
         // A quoted certain hit is only a mention: it keeps half its weight as a
         // signal but loses the power to convict.
         tier: Tier::Ambiguous,
-        weight: if hit.tier == Tier::Certain { hit.weight / 2 } else { hit.weight },
+        weight: if hit.tier == Tier::Certain {
+            hit.weight / 2
+        } else {
+            hit.weight
+        },
         quoted: true,
         ..hit
     }
@@ -483,17 +536,30 @@ enum Category {
 
 fn category(id: &str) -> Option<Category> {
     Some(match id {
-        "instr-system-bracket" | "instr-fake-role-tags" | "instr-inst-bracket"
+        "instr-system-bracket"
+        | "instr-fake-role-tags"
+        | "instr-inst-bracket"
         | "instr-sys-bracket" => Category::Authority,
 
-        "instr-override-generic" | "instr-override-system" | "instr-discard-instructions"
-        | "instr-unrestricted-persona" | "instr-ignore-previous"
-        | "instr-ignore-above" | "instr-ignore-everything-above" | "instr-disregard-previous"
-        | "instr-forget-instructions" | "instr-new-system-prompt" | "instr-you-are-now"
-        | "instr-you-are-free" | "instr-from-now-on" | "instr-pretend"
+        "instr-override-generic"
+        | "instr-override-system"
+        | "instr-discard-instructions"
+        | "instr-unrestricted-persona"
+        | "instr-ignore-previous"
+        | "instr-ignore-above"
+        | "instr-ignore-everything-above"
+        | "instr-disregard-previous"
+        | "instr-forget-instructions"
+        | "instr-new-system-prompt"
+        | "instr-you-are-now"
+        | "instr-you-are-free"
+        | "instr-from-now-on"
+        | "instr-pretend"
         | "instr-reveal-prompt" => Category::Override,
 
-        "jailbreak-persona-mode" | "jailbreak-guidelines-ref" | "jailbreak-filter-bypass"
+        "jailbreak-persona-mode"
+        | "jailbreak-guidelines-ref"
+        | "jailbreak-filter-bypass"
         | "role-theft-admin" => Category::Jailbreak,
 
         "tool-exec-run" => Category::Action,
@@ -528,9 +594,7 @@ fn decisive_combination(hits: &std::collections::BTreeMap<String, Hit>) -> bool 
 /// Returns `(score, fired_rule_ids, decisive)`. `decisive` is true when at least
 /// one unquoted [`Tier::Certain`] hit survived, or when a decisive combination of
 /// individually-ambiguous signals fired. The engine hard-blocks only on that.
-pub fn aggregate(
-    hits: &std::collections::BTreeMap<String, Hit>,
-) -> (u8, Vec<String>, bool) {
+pub fn aggregate(hits: &std::collections::BTreeMap<String, Hit>) -> (u8, Vec<String>, bool) {
     if hits.is_empty() {
         return (0, Vec::new(), false);
     }

@@ -76,7 +76,10 @@ async fn benign_messages_forwarded() {
 
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
-    assert_eq!(body, upstream_body, "benign response should forward byte-identical");
+    assert_eq!(
+        body, upstream_body,
+        "benign response should forward byte-identical"
+    );
 }
 
 #[tokio::test]
@@ -100,7 +103,10 @@ async fn injected_last_message_is_blocked() {
 
     assert_eq!(resp.status(), 403);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["type"], "error", "expected Anthropic-shaped error body");
+    assert_eq!(
+        body["type"], "error",
+        "expected Anthropic-shaped error body"
+    );
     assert_ne!(body["error"]["message"], serde_json::Value::Null);
 }
 
@@ -161,7 +167,12 @@ async fn benign_sse_replayed_byte_identical() {
 #[tokio::test]
 async fn scan_endpoint_classifies_without_upstream() {
     // Upstream deliberately returns a marker: if /scan were forwarded, we'd see it.
-    let upstream = mock_upstream(raw_http_response(200, "application/json", r#"{"forwarded":true}"#)).await;
+    let upstream = mock_upstream(raw_http_response(
+        200,
+        "application/json",
+        r#"{"forwarded":true}"#,
+    ))
+    .await;
     let audit = NamedTempFile::new().unwrap();
     let proxy = spawn_proxy(test_cfg(upstream, &audit)).await;
     let client = reqwest::Client::new();
@@ -174,7 +185,10 @@ async fn scan_endpoint_classifies_without_upstream() {
         .expect("request");
     assert_eq!(benign.status(), 200);
     let v: serde_json::Value = benign.json().await.unwrap();
-    assert!(v.get("forwarded").is_none(), "/scan must not reach upstream");
+    assert!(
+        v.get("forwarded").is_none(),
+        "/scan must not reach upstream"
+    );
     assert_eq!(v["action"], "pass");
     assert_eq!(v["safe"], true);
 
@@ -222,7 +236,9 @@ async fn health_endpoint_reports_ok() {
     let audit = NamedTempFile::new().unwrap();
     let proxy = spawn_proxy(test_cfg(upstream, &audit)).await;
 
-    let resp = reqwest::get(format!("{proxy}/health")).await.expect("request");
+    let resp = reqwest::get(format!("{proxy}/health"))
+        .await
+        .expect("request");
     assert_eq!(resp.status(), 200);
     let v: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(v["status"], "ok");

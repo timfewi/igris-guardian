@@ -42,13 +42,25 @@ pub fn analyze(text: &str) -> (String, Vec<Finding>) {
     // and exist in the wild essentially only to smuggle instructions.
     let mut findings = Vec::new();
     if has_zero_width {
-        findings.push(Finding { id: "zero-width", weight: 40, tier: Tier::Ambiguous });
+        findings.push(Finding {
+            id: "zero-width",
+            weight: 40,
+            tier: Tier::Ambiguous,
+        });
     }
     if has_bidi {
-        findings.push(Finding { id: "bidi-override", weight: 40, tier: Tier::Ambiguous });
+        findings.push(Finding {
+            id: "bidi-override",
+            weight: 40,
+            tier: Tier::Ambiguous,
+        });
     }
     if has_tag_block {
-        findings.push(Finding { id: "tag-block", weight: 70, tier: Tier::Certain });
+        findings.push(Finding {
+            id: "tag-block",
+            weight: 70,
+            tier: Tier::Certain,
+        });
     }
 
     let nfkc: String = text.nfkc().collect();

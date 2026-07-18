@@ -109,9 +109,8 @@ async fn handle(
     // Legacy generation routes (Anthropic /v1/complete, OpenAI /v1/completions)
     // must be scanned too — otherwise a client pointed at a legacy endpoint
     // bypasses the firewall entirely.
-    let is_legacy_route = is_post
-        && (path == "/v1/complete" || path.ends_with("/completions"))
-        && !is_chat_route;
+    let is_legacy_route =
+        is_post && (path == "/v1/complete" || path.ends_with("/completions")) && !is_chat_route;
     let is_special = is_messages_route || is_chat_route || is_legacy_route;
     // Response shape follows the request family (Anthropic vs OpenAI).
     let anthropic_shape = is_messages_route || path == "/v1/complete";
@@ -136,7 +135,11 @@ async fn handle(
         .path_and_query()
         .map(|pq| pq.as_str())
         .unwrap_or("/");
-    let target = format!("{}{}", cfg.serve.upstream.trim_end_matches('/'), path_and_query);
+    let target = format!(
+        "{}{}",
+        cfg.serve.upstream.trim_end_matches('/'),
+        path_and_query
+    );
 
     let mut rb = client.request(parts.method.clone(), &target);
     for (name, value) in parts.headers.iter() {
@@ -379,10 +382,18 @@ fn extract_sse_text(bytes: &[u8], is_messages_route: bool) -> String {
             continue;
         };
         if is_messages_route {
-            if let Some(t) = v.get("delta").and_then(|d| d.get("text")).and_then(|t| t.as_str()) {
+            if let Some(t) = v
+                .get("delta")
+                .and_then(|d| d.get("text"))
+                .and_then(|t| t.as_str())
+            {
                 out.push_str(t);
             }
-        } else if let Some(first) = v.get("choices").and_then(|c| c.as_array()).and_then(|a| a.first()) {
+        } else if let Some(first) = v
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|a| a.first())
+        {
             // Modern chat: choices[0].delta.content. Legacy: choices[0].text.
             if let Some(t) = first
                 .get("delta")

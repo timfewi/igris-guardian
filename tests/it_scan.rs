@@ -82,9 +82,7 @@ fn scan_passes_benign() {
         .expect("spawn igris scan");
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(benign.as_bytes())
-            .expect("write to stdin");
+        stdin.write_all(benign.as_bytes()).expect("write to stdin");
     }
 
     let output = child.wait_with_output().expect("wait for igris");

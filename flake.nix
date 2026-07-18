@@ -47,8 +47,22 @@
 
             environmentFile = mkOption {
               type = types.path;
-              description = "Path to environment file with IGRIS_STAGE2_KEY and optionally IGRIS_LISTEN/IGRIS_UPSTREAM/IGRIS_AUTH_TOKEN";
-              example = "/run/secrets/igris.env";
+              description = ''
+                Path to an environment file holding the stage-2 API key, and
+                optionally the endpoint overrides. The variable names are the ones
+                config.rs actually reads:
+
+                  IGRIS_STAGE2_KEY       (or whatever stage2.api_key_env names)
+                  IGRIS_STAGE2_BASE_URL
+                  IGRIS_STAGE2_MODEL
+                  IGRIS_SERVE_LISTEN
+                  IGRIS_SERVE_UPSTREAM
+                  IGRIS_AUDIT_LOG
+
+                Keep this out of the Nix store — it holds a credential. Use agenix
+                or another runtime secret path such as /run/agenix/igris-env.
+              '';
+              example = "/run/agenix/igris.env";
             };
           };
 
@@ -75,6 +89,13 @@
                 RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
                 SystemCallFilter = [ "@system-service" ];
                 SystemCallErrorNumber = "EPERM";
+
+                # Audit log lives here. Required: DynamicUser + ProtectHome means
+                # the default ~/.local/state path is unwritable, and audit writes
+                # are best-effort, so without this the trail silently disappears.
+                # Point audit_log at /var/lib/igris/audit.jsonl in the config file.
+                StateDirectory = "igris";
+                StateDirectoryMode = "0750";
 
                 # Logging
                 LogsDirectory = "igris";

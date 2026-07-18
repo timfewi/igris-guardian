@@ -54,7 +54,12 @@ impl Engine {
         for f in &findings {
             crate::rules::merge_hit(
                 &mut hits,
-                crate::rules::Hit { id: f.id, weight: f.weight, tier: f.tier, quoted: false },
+                crate::rules::Hit {
+                    id: f.id,
+                    weight: f.weight,
+                    tier: f.tier,
+                    quoted: false,
+                },
             );
         }
 
@@ -148,7 +153,11 @@ fn unadjudicated(v: Verdict, fail_mode: FailMode) -> Verdict {
         FailMode::DegradeStage1 => Verdict::new(
             v.score,
             // Certain stage-1 evidence still blocks; only the ambiguous case degrades.
-            if v.action == Action::Block { Action::Block } else { Action::Warn },
+            if v.action == Action::Block {
+                Action::Block
+            } else {
+                Action::Warn
+            },
             v.confidence,
             with(v.reasons, "unadjudicated-degraded"),
         ),

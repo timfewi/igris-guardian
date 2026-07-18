@@ -7,9 +7,10 @@ use crate::Verdict;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Write;
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
 pub struct Audit {
@@ -44,7 +45,10 @@ impl Audit {
 
         let sha256_hex = {
             let digest = Sha256::digest(text.as_bytes());
-            digest.iter().map(|b| format!("{b:02x}")).collect::<String>()
+            digest
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
         };
 
         let mut record = json!({
@@ -64,12 +68,27 @@ impl Audit {
             record["excerpt"] = json!(excerpt);
         }
 
-        if let Ok(mut file) = OpenOptions::new()
+        // A security tool that loses its audit trail in silence is worse than one
+        // with no audit trail, because the gap is invisible. Writes are still
+        // best-effort — a full disk must never wedge the scan path — but the first
+        // failure says so on stderr, where systemd will journal it.
+        let written = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.path)
-        {
-            let _ = writeln!(file, "{}", record);
+            .and_then(|mut file| writeln!(file, "{record}"));
+
+        if let Err(e) = written {
+            if !AUDIT_FAILED.swap(true, Ordering::Relaxed) {
+                eprintln!(
+                    "igris: WARNING audit log unwritable ({}): {e} — verdicts are no longer being recorded",
+                    self.path.display()
+                );
+            }
         }
     }
 }
+
+/// Set once the first audit write fails, so a broken log path reports itself
+/// exactly once rather than on every scanned event.
+static AUDIT_FAILED: AtomicBool = AtomicBool::new(false);

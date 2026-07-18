@@ -1,7 +1,8 @@
 //! Igris Guardian entry point. Hand-rolled arg dispatch (3 subcommands, no clap).
 
 use igris_guardian::config::Config;
-use igris_guardian::{adapter_hook, adapter_scan, adapter_serve, stage2};use std::path::PathBuf;
+use igris_guardian::{adapter_hook, adapter_scan, adapter_serve, stage2};
+use std::path::PathBuf;
 
 fn usage() -> ! {
     eprintln!(
