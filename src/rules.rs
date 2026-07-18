@@ -528,6 +528,27 @@ fn address_re() -> &'static Regex {
 /// not go on to name which document's instructions it meant.
 fn bound_to_named_artifact(window: &str, match_end: usize) -> bool {
     let tail: String = window[match_end..].chars().take(40).collect();
+
+    // A relative clause pointing *back* at the agent's own standing instructions
+    // is the attack restating its target, not prose naming a document:
+    // "ignore all instructions that came before this" binds to nothing external.
+    // Checked first because the `regex` crate has no lookahead to express it
+    // inside the pattern below.
+    let lower = tail.to_lowercase();
+    const BACKREFERENCES: [&str; 8] = [
+        "before",
+        "prior",
+        "previous",
+        "earlier",
+        "above",
+        "preceded",
+        "given to you",
+        "you received",
+    ];
+    if BACKREFERENCES.iter().any(|b| lower.contains(b)) {
+        return false;
+    }
+
     binding_re().is_match(&tail)
 }
 
@@ -536,7 +557,20 @@ static BINDING_RE: OnceLock<Regex> = OnceLock::new();
 fn binding_re() -> &'static Regex {
     BINDING_RE.get_or_init(|| {
         Regex::new(
-            r"(?i)^\s*(?:(?:in|from|for|of|on|within|inside|under)\s+(?:the|this|that|your|our|my|a|an|those|these)\s|(?:that|which)\s+(?:were|was|are|is|had|have)\s|(?:handler|function|method|module|file|class|endpoint|variable|parameter|field|flag|section|test|helper)\b)",
+            concat!(
+                r"(?i)^\s*(?:",
+                // Prepositional phrase naming the document the instructions live in.
+                r"(?:in|from|for|of|on|within|inside|under)\s+(?:the|this|that|your|our|my|a|an|those|these)\s",
+                // Any relative clause — restrictive clauses identify *which*
+                // instructions ("instructions that reference the legacy build",
+                // "instructions the vendor sent"). Backreferences to the agent's own
+                // prior instructions are excluded by the caller.
+                r"|(?:that|which)\s+\w",
+                r"|(?:the|a|an|my|our|your|their|his|her)\s+\w+\s+(?:sent|gave|wrote|provided|shipped|added|left|issued|supplied|attached)",
+                // The phrase is a code identifier rather than a directive.
+                r"|(?:handler|function|method|module|file|class|endpoint|variable|parameter|field|flag|section|test|helper)\b",
+                r")",
+            ),
         )
         .unwrap()
     })
