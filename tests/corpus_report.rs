@@ -52,7 +52,8 @@ fn report() {
         }
     }
 
-    let benign = load("tests/corpus/benign.jsonl");
+    let mut benign = load("tests/corpus/benign.jsonl");
+    benign.extend(load("tests/corpus/benign_hard.jsonl"));
     let mut benign_blocked = Vec::new();
     for c in &benign {
         let v = eng.scan_stage1(&c.text);

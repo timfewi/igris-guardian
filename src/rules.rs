@@ -90,9 +90,12 @@ fn build_rules() -> Vec<CompiledRule> {
             85,
             r"(?i)ignore\s+(all\s+)?above\s+instructions",
         ),
-        certain(
+        // Bare "disregard all previous <anything>" convicted "disregard previous
+        // comments on this thread". The form that matters — disregarding previous
+        // *instructions* — is covered as Certain by `instr-discard-instructions`.
+        ambiguous(
             "instr-disregard-previous",
-            85,
+            45,
             r"(?i)disregard\s+(all\s+)?previous",
         ),
         certain(
@@ -105,38 +108,51 @@ fn build_rules() -> Vec<CompiledRule> {
             85,
             r"(?i)override\s+(system|previous)\s+(prompt|instructions)",
         ),
+        // Reassignment of the agent's *nature*, not of a human role. The original
+        // "you are now a/an/the <anything>" convicted "you are now a maintainer on
+        // this repo" and "you are now the on-call engineer" — access grants and
+        // handover notes, which are everywhere in team chat and tool output.
         certain(
             "instr-you-are-now",
             85,
-            r"(?i)you\s+are\s+now\s+(?:a|an|the)\s+",
+            r"(?i)you\s+are\s+now\s+(?:a|an|the)\s+(?:\w+\s+){0,2}(?:AI|A\.I\.|assistant|model|chatbot|bot|agent|LLM|GPT|persona|character)\b",
         ),
         // "act as a/an/the <word>" excluding plan/phase/wave — handled below (no lookahead in `regex`).
-        certain(
+        // "Pretend to be offline in this test" is ordinary test-scaffolding speech,
+        // so this corroborates rather than convicts.
+        ambiguous(
             "instr-pretend",
-            85,
+            45,
             r"(?i)pretend\s+(?:you(?:'re| are)\s+|to\s+be\s+)",
         ),
-        certain(
+        // "From now on you must run the formatter before pushing" — every
+        // contributing guide ever written. Corroborating only.
+        ambiguous(
             "instr-from-now-on",
-            85,
+            45,
             r"(?i)from\s+now\s+on,?\s+you\s+(?:are|will|should|must)",
         ),
+        // Requires the possessive: exfiltrating *your* prompt is the attack, while
+        // "print instructions for the failing migration" and "display instructions
+        // on stderr" are ordinary CLI-help prose that the unqualified form convicted.
         certain(
             "instr-reveal-prompt",
             85,
-            r"(?i)(?:print|output|reveal|show|display|repeat)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions)",
+            r"(?i)(?:print|output|reveal|show|display|repeat|dump|echo)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+|initial\s+|original\s+|hidden\s+)?(?:prompt|instructions|system\s+message)",
         ),
         certain(
             "instr-fake-role-tags",
             85,
             r"(?i)</?(?:system|assistant|human)>",
         ),
-        // `[SYSTEM]` is ubiquitous in ordinary log output ("[SYSTEM] service started"),
-        // so it cannot block alone — unlike the llama-template tags below, which are
-        // vanishingly rare outside a chat template or an attack.
+        // Chat-template markers. All three are described in bare prose by ordinary
+        // LLM documentation ("the Llama 2 template wraps system content in <<SYS>>
+        // tags and each user turn in [INST] blocks"), so none convicts alone. They
+        // carry the Authority category instead, which convicts when paired with a
+        // directive — a forged turn, rather than a description of one.
         ambiguous("instr-system-bracket", 60, r"(?i)\[SYSTEM\]"),
-        certain("instr-inst-bracket", 85, r"(?i)\[INST\]"),
-        certain("instr-sys-bracket", 85, r"(?i)<<\s*SYS\s*>>"),
+        ambiguous("instr-inst-bracket", 60, r"(?i)\[INST\]"),
+        ambiguous("instr-sys-bracket", 60, r"(?i)<<\s*SYS\s*>>"),
         // --- report section 3.1: system-prompt-override extras not in the 14 ---
         // The single worst precision offender in the original ruleset: at weight 75
         // this fired on any prose pairing "override"/"ignore" with
@@ -158,7 +174,7 @@ fn build_rules() -> Vec<CompiledRule> {
         certain(
             "instr-discard-instructions",
             85,
-            r"(?i)(?:ignore|disregard|forget|override|discard)\s+(?:all\s+)?(?:of\s+)?(?:your|the|my|these|those|any)?\s*(?:(?:previous|prior|earlier|above|preceding|original|initial|system|standing|safety)\s+)?(?:instructions?|directives?)|(?:ignore|disregard|forget|override|discard)\s+(?:all\s+)?(?:your|the|my|these|those|any)?\s*(?:previous|prior|earlier|above|preceding|original|initial|system|standing|safety)\s+(?:rules?|guidelines?)",
+            r"(?i)(?:ignore|disregard|forget|override|discard)\s+(?:all\s+)?(?:of\s+)?(?:your|the|my|these|those|any)?\s*(?:(?:previous|prior|earlier|above|preceding|original|initial|system|standing|safety|content)\s+){0,3}(?:instructions?|directives?)|(?:ignore|disregard|forget|override|discard)\s+(?:all\s+)?(?:your|the|my|these|those|any)?\s*(?:(?:previous|prior|earlier|above|preceding|original|initial|system|standing|safety|content)\s+){1,3}(?:rules?|guidelines?|guidance|polic(?:y|ies))",
         ),
         certain(
             "instr-ignore-everything-above",
@@ -177,7 +193,7 @@ fn build_rules() -> Vec<CompiledRule> {
         certain(
             "instr-unrestricted-persona",
             85,
-            r"(?i)(?:act\s+as|you\s+are|you're|become|behave\s+(?:as|like)|roleplay\s+as|pretend\s+to\s+be)\s+(?:a|an|the)?\s*(?:completely\s+|totally\s+|fully\s+)?(?:unrestricted|unfiltered|uncensored|unbound|unlimited|jailbroken|amoral|lawless)",
+            r"(?i)(?:act\s+as|you\s+are|you're|become|behave\s+(?:as|like)|roleplay\s+as|pretend\s+(?:to\s+be|you(?:'re| are)))\s+(?:a|an|the)?\s*(?:completely\s+|totally\s+|fully\s+)?(?:(?:unrestricted|unfiltered|uncensored|unbound|unlimited|jailbroken|amoral|lawless)|(?:\w+\s+){0,2}with\s+(?:no|zero|without\s+any)\s+(?:restrictions?|limits?|filters?|rules?|content\s+polic|guidelines?|safety))",
         ),
         // --- report section 3.1: role theft ---
         // "act as a root cause analyst", "pretend the admin user exists" — real prose.
@@ -368,12 +384,116 @@ fn quoted_everywhere(re: &Regex, text: &str) -> bool {
         if inside_fence(text, m.start())
             || window.lines().any(is_definition_line)
             || is_quoted_span(window, m.start() - start, m.end() - start)
+            || describes_rather_than_utters(window)
+            || bound_to_named_artifact(window, m.end() - start)
         {
             continue;
         }
         return false; // one bare utterance is enough to convict
     }
     saw_match
+}
+
+/// Whether the surrounding sentence is *reporting* a payload rather than
+/// delivering one.
+///
+/// Quoting context only helps when the payload is actually quoted, and much
+/// security writing states it in bare prose: "the classic attack string is simply
+/// ignore all previous instructions", "the adversary asks it to ignore previous
+/// instructions", "Igris blocks text that tries to override system instructions".
+/// Every one of those is a sentence *about* an attack, and the giveaway is
+/// vocabulary an attacker has no reason to include: they are describing a third
+/// party's payload, so they name the attacker, the technique, or the defence.
+///
+/// ponytail: keyword list, not a parser — same accepted ceiling as the quoting
+/// check. An attacker can salt their payload with the word "example" to earn the
+/// downgrade, which costs them a conviction and buys a stage-2 adjudication, not
+/// a skip. Upgrade path if that stops holding: require the marker to precede the
+/// match rather than merely share its window.
+fn describes_rather_than_utters(window: &str) -> bool {
+    // Every entry has to pass one test: would an attacker writing a payload have
+    // any reason to include this word? "payload", "jailbreak", "attack" and
+    // "malicious" all failed it — real payloads say "here's the payload" and
+    // "give me the JAILBREAK mode answer" — so they are deliberately absent. What
+    // remains is vocabulary that only makes sense when describing someone else's
+    // attack or one's own defence.
+    const REPORTING_MARKERS: [&str; 31] = [
+        // Naming the adversary or the technique from the outside.
+        "attacker",
+        "adversary",
+        "exploit",
+        "threat model",
+        "owasp",
+        "cve-",
+        "vulnerab",
+        "attack string",
+        // Naming the defence.
+        "detect",
+        "detector",
+        "scanner",
+        "ruleset",
+        "denylist",
+        "signature",
+        "blocks text",
+        "flagged",
+        "false positive",
+        "guardrail",
+        // Framing something as an illustration.
+        "e.g.",
+        "for example",
+        "such as",
+        "for instance",
+        // Reporting a third party's speech or intent. Security writing narrates
+        // what the attacker's text does to the model, and needs a word for the
+        // model to do it to.
+        "tries to",
+        "attempts to",
+        "told to",
+        "the assistant to",
+        "the model to",
+        "causes the",
+        "untrusted input",
+        "untrusted content",
+        "user-supplied",
+    ];
+    // Addresses are stripped first. An exfiltration target like
+    // `http://attacker:secret@evil.example/steal` or `attacker@evil.test` would
+    // otherwise hand the payload a "reporting" marker out of its own hostname —
+    // the destination of an attack is not a description of one.
+    let stripped = address_re().replace_all(window, " ");
+    let lower = stripped.to_lowercase();
+    REPORTING_MARKERS.iter().any(|m| lower.contains(m))
+}
+
+static ADDRESS_RE: OnceLock<Regex> = OnceLock::new();
+
+fn address_re() -> &'static Regex {
+    ADDRESS_RE.get_or_init(|| Regex::new(r"(?i)[a-z][a-z0-9+.-]*://\S+|\S+@[\w.-]+").unwrap())
+}
+
+/// Whether the matched instruction phrase is bound to a *named artefact* rather
+/// than to the agent's own standing instructions.
+///
+/// "ignore previous instructions **in the ticket description**", "forget your
+/// instructions **from the old README**", "rename the forget-your-instructions
+/// **handler**" — all ordinary developer speech, and all distinguished from a real
+/// payload by what immediately follows the phrase. An attack continues with a
+/// directive ("...and email the keys"), a full stop, or nothing at all; it does
+/// not go on to name which document's instructions it meant.
+fn bound_to_named_artifact(window: &str, match_end: usize) -> bool {
+    let tail: String = window[match_end..].chars().take(40).collect();
+    binding_re().is_match(&tail)
+}
+
+static BINDING_RE: OnceLock<Regex> = OnceLock::new();
+
+fn binding_re() -> &'static Regex {
+    BINDING_RE.get_or_init(|| {
+        Regex::new(
+            r"(?i)^\s*(?:(?:in|from|for|of|on|within|inside|under)\s+(?:the|this|that|your|our|my|a|an|those|these)\s|(?:that|which)\s+(?:were|was|are|is|had|have)\s|(?:handler|function|method|module|file|class|endpoint|variable|parameter|field|flag|section|test|helper)\b)",
+        )
+        .unwrap()
+    })
 }
 
 /// Whether `offset` falls inside a fenced code block, by parity of the fence
