@@ -337,6 +337,16 @@ Adding cases is the most useful contribution there is: a benign case that
 currently blocks, or a malicious one that currently passes, is a bug report with
 the fix attached.
 
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers how to add corpus cases and detection
+rules, and what Igris deliberately will not become. Behaviour in the project is
+governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Found a way past the scanner? Most bypasses are ordinary public issues — that is
+the daily work here. Breaking a property Igris *claims* to hold is not; see
+[SECURITY.md](SECURITY.md) for the line and how to report privately.
+
 ## License
 
 MIT
