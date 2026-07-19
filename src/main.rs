@@ -2,7 +2,7 @@
 
 use igris_guardian::config::Config;
 use igris_guardian::Trust;
-use igris_guardian::{adapter_hook, adapter_scan, adapter_serve, stage2};
+use igris_guardian::{adapter_hook, adapter_scan, adapter_serve, console, stage2};
 use std::path::PathBuf;
 
 fn usage() -> ! {
@@ -14,6 +14,7 @@ fn usage() -> ! {
          \x20                                     scan stdin/arg, print JSON verdict\n\
          \x20 igris hook [--config PATH]          Claude Code hook adapter (stdin JSON)\n\
          \x20 igris serve [--config PATH]         filtering reverse proxy\n\
+         \x20 igris console [--config PATH]       live audit-log dashboard (read-only)\n\
          \n\
          \x20 --trust user   text the operator typed themselves; countermanding\n\
          \x20                standing instructions warns instead of blocking.\n\
@@ -51,6 +52,9 @@ async fn main() {
         "scan" => adapter_scan::run(cfg, positional.into_iter().next(), trust).await,
         "hook" => adapter_hook::run(cfg).await,
         "serve" => adapter_serve::run(cfg).await,
+        // Synchronous and blocking, which is fine: it is the only thing this
+        // process is doing, and it owns the terminal until the user quits.
+        "console" => console::run(cfg),
         "-h" | "--help" | "help" => usage(),
         _ => usage(),
     };
