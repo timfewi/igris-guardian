@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2021"
 description = "Igris Guardian — a prompt-injection firewall. Verdict-only, pass-or-block, incapable of anything else."
 license = "MIT"
+repository = "https://github.com/timfewi/igris"
+readme = "README.md"
+keywords = ["prompt-injection", "llm", "security", "firewall", "agent"]
+categories = ["command-line-utilities", "web-programming"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
 
 [[bin]]
 name = "igris"

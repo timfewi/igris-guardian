@@ -78,6 +78,44 @@ fn benign_passes() {
     }
 }
 
+/// The hard benign corpus: security-tool source, threat-model docs, CTF
+/// writeups, git history and LLM documentation — content that quotes attack
+/// strings for a living, and where a naive scanner scores 100.
+///
+/// Gated on a *rate* rather than case-by-case, deliberately. Whole security
+/// documents are the genuinely hard tail, and driving this to zero would mean
+/// over-fitting the ruleset to individual pages in this file, which is how a
+/// detector stops generalising. Known residual: an OWASP LLM01 page whose
+/// payload sentences sit paragraphs away from the reporting vocabulary that
+/// would otherwise excuse them.
+#[test]
+fn hard_benign_false_positive_rate_stays_low() {
+    let eng = engine();
+    let corpus = load_corpus("tests/corpus/benign_hard.jsonl");
+    assert!(
+        corpus.len() >= 100,
+        "need >=100 hard benign cases, got {}",
+        corpus.len()
+    );
+
+    let blocked: Vec<_> = corpus
+        .iter()
+        .filter(|c| eng.scan_stage1(&c.text).action == Action::Block)
+        .collect();
+
+    let rate = 100.0 * blocked.len() as f64 / corpus.len() as f64;
+    assert!(
+        rate <= 2.0,
+        "false-positive rate {rate:.1}% exceeds the 2% budget ({}/{} blocked): {:#?}",
+        blocked.len(),
+        corpus.len(),
+        blocked
+            .iter()
+            .map(|c| c.note.as_deref().unwrap_or("?"))
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn unicode_smuggling_blocks() {
     let eng = engine();

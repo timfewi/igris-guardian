@@ -3,10 +3,10 @@
 
 use crate::config::Config;
 use crate::engine::Engine;
-use crate::{Action, FailMode};
+use crate::{Action, FailMode, Trust};
 use std::io::Read;
 
-pub async fn run(cfg: Config, text_arg: Option<String>) -> i32 {
+pub async fn run(cfg: Config, text_arg: Option<String>, trust: Trust) -> i32 {
     // Read text from arg or stdin.
     let text = if let Some(arg) = text_arg {
         arg
@@ -20,7 +20,9 @@ pub async fn run(cfg: Config, text_arg: Option<String>) -> i32 {
     };
 
     let engine = Engine::new(cfg);
-    let verdict = engine.scan(&text, "stdin", FailMode::Close).await;
+    let verdict = engine
+        .scan_trusted(&text, "stdin", trust, FailMode::Close)
+        .await;
 
     // Print JSON verdict.
     if let Ok(json) = serde_json::to_string(&verdict) {
