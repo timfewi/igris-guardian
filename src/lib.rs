@@ -12,6 +12,7 @@ pub mod adapter_scan;
 pub mod adapter_serve;
 pub mod audit;
 pub mod config;
+pub mod console;
 pub mod engine;
 pub mod normalize;
 pub mod rules;

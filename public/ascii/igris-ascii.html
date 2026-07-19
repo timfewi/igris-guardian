@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>igris-ascii - ASCII Motion Animation</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px 24px;
+      background-color: #000000;
+      font-family: monospace, monospace;
+      font-size: 14px;
+      line-height: 1;
+      color: #f8f9fb;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+
+    .layout {
+      width: min(100%, 960px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .animation-shell {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .animation-stage {
+      position: relative;
+      --cols: 40;
+      --rows: 40;
+      background-color: #000000;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 6px;
+      padding: 16px;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.25) inset;
+    }
+
+    .animation-canvas {
+      position: relative;
+      display: block;
+      white-space: pre;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      min-width: calc(var(--cols) * 1ch);
+      min-height: calc(var(--rows) * 1em);
+    }
+
+    .frame {
+      position: absolute;
+      inset: 0;
+      display: none;
+      white-space: pre;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      pointer-events: none;
+    }
+        
+    .frame.active {
+      display: block;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .playback-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(14, 14, 16, 0.65);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35);
+    }
+
+    .playback-button {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(22,22,26,0.9);
+      color: #f8f9fb;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease, transform 120ms ease;
+    }
+
+    .playback-button svg {
+      width: 20px;
+      height: 20px;
+      display: block;
+    }
+
+    .playback-button:hover:not(:disabled),
+    .playback-button:focus-visible {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.28);
+      outline: none;
+    }
+
+    .playback-button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    .playback-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.4;
+    }
+
+    .playback-button.is-primary,
+    .playback-button.is-active {
+      background: rgba(139, 92, 246, 0.9);
+      border-color: rgba(139, 92, 246, 0.95);
+      color: #fff;
+    }
+
+    .playback-button.is-primary:hover:not(:disabled),
+    .playback-button.is-active:hover:not(:disabled) {
+      background: rgba(167, 139, 250, 0.95);
+      border-color: rgba(167, 139, 250, 1);
+    }
+
+    .playback-divider {
+      width: 1px;
+      height: 24px;
+      background: rgba(255,255,255,0.14);
+      margin: 0 4px;
+    }
+
+    .frame-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+    }
+
+    .frame-value {
+      padding: 4px 12px;
+      min-width: 3.75rem;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: #f8f9fb;
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
+      text-align: center;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: center;
+      font-size: 12px;
+      color: rgba(255,255,255,0.72);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <div class="animation-shell">
+      <div class="animation-stage" id="animationStage">
+        <div class="animation-canvas" id="animationCanvas"></div>
+      </div>
+
+      <div class="controls">
+        <div class="playback-controls" role="group" aria-label="Playback controls">
+          <button class="playback-button" id="control-prev" aria-label="Previous frame" type="button"></button>
+          <button class="playback-button" id="control-play" aria-label="Play animation" type="button"></button>
+          <button class="playback-button" id="control-stop" aria-label="Stop animation" type="button"></button>
+          <button class="playback-button" id="control-next" aria-label="Next frame" type="button"></button>
+          <div class="playback-divider" aria-hidden="true"></div>
+          <div class="frame-indicator">
+            <span class="frame-label">Frame:</span>
+            <span class="frame-value" id="frame-indicator">1 / 1</span>
+          </div>
+          <button class="playback-button" id="control-loop" aria-label="Toggle loop" aria-pressed="false" type="button"></button>
+        </div>
+      </div>
+
+      <div class="info">
+        
+        <div><strong>Untitled Project</strong></div>
+        
+        <div>Frames: 1 | Duration: 0.1s</div>
+        <div>Resolution: 40×40</div>
+        <div>Exported: 7/19/2026</div>
+        
+      </div>
+    </div>
+  </main>
+
+    <script>
+      const frameData = [{"id":"composited-0","name":"Frame 1","duration":83.33333333333333,"characters":[[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","1"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ",".","Y",";"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","]","Y","i"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","f","f","?"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","]","?","'","j","["," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","f","i",")"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","]","U","["," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," ","l",")"," "," "," ","m"," "," "," ","<",","," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," ","_",",","{","["," "," "," "," ","'"," "," "," "," ","(",")","l"," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," ",".",")","f","Y"," "," "," "," "," "," ","|"," "," "," "," "," "," ","Y","T","c",","," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," ",".","<","m"," "," "," "," "," "," "," "," ","!","|"," "," "," "," "," "," "," "," ","*","T",">",","," "," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","U"," "," "," "," "," "," "," "," "," "," ","|","i","l"," "," "," "," "," "," "," "," "," ","'","m","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","s"," "," "," "," "," "," "," "," "," ","!","s","!","m","["," "," "," "," "," "," "," "," "," ","]","r"," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","["," "," "," "," "," "," "," "," "," ","{","U","|","U","|"," "," "," "," "," "," "," "," "," ","j","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","s"," "," "," "," "," "," ",".","{"," ","!","s","|","m"," "," ","j"," "," "," "," "," "," "," ","]","r"," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","s"," "," "," "," "," ","|","j","U"," "," ","]",";","["," ","-","U","T","["," "," "," "," "," ","]","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","["," "," "," "," ",")","m","(","U","?"," "," ","U"," ","!","f","U","]","|","["," "," "," "," ","]","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","s"," "," "," "," "," ","(","|","{","Y",")"," "," "," ","{","[","j","U","Y"," "," "," "," "," ","]","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","s"," "," "," "," ","l"," "," ","l","{","U","l"," ","]","i","j","["," ",".","["," "," "," "," ","]","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","["," "," "," "," ","]","T"," "," "," ","Y","U","f","U","F"," "," "," ","j","["," "," "," "," ","]","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","["," "," "," "," ","!","|","T","i"," "," ","!","U","["," "," ","|","[","j","["," "," "," "," ","]","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","i"," "," "," "," "," ","j","["," ","|","[","!","m"," ","]","m"," ","]","["," "," "," "," "," ","]","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","["," "," "," "," "," ","]","|"," ","]","["," ","f"," ","]","["," ","U","i"," "," "," "," "," ","]","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","]","["," "," "," "," ","-","U","m"," ","]","["," "," "," ","]","[","]","m","m"," "," "," "," "," ","]","["," "," "," "," "," "," "," "],[" "," "," "," "," "," ","!","j"," "," "," "," "," "," ","f"," ","]","]"," ","."," ","[","[","]","["," "," "," "," "," ",".","U","["," "," "," "," "," "," "," "],[" "," "," "," "," "," "," ","!","j","["," "," "," "," "," "," ","]","|"," ","i"," ","m","["," "," "," "," "," "," ",".","j","("," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," ","!","i","["," "," "," "," "," ","(","U"," ","["," ","m","["," "," "," "," "," ","|","|"," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," ","(","l"," "," "," "," ","!","m"," ","i"," ","U"," "," "," "," "," ","]","["," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," ","j","i"," "," "," "," ","j"," ","i"," ","["," "," "," "," ","]","|"," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," ","j","|"," "," "," ","]"," ","i"," "," "," "," ",".","]","["," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," ","!","i"," "," "," "," ","i"," "," "," ",".","i"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","m","."," "," ","i"," "," ",".","j"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","(","["," ","j"," ","!","|"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","!"," ","i"," ","!"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","j"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ","!"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "],[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "]],"colors":[["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#F08080","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#A52A2A","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#CD5C5C","#A52A2A","#F08080","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#CD5C5C","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#F08080","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#F08080","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#F08080","#F08080","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#F08080","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#F08080","#F08080","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#CD5C5C","#A52A2A","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#A52A2A","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#F08080","#FFFFFF","#A52A2A","#CD5C5C","#A52A2A","#CD5C5C","#FFFFFF","#FFFFFF","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#F08080","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#A52A2A","#FFFFFF","#A52A2A","#F08080","#F08080","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#A52A2A","#F08080","#F08080","#FFFFFF","#FFFFFF","#CD5C5C","#FFFFFF","#A52A2A","#FA8072","#F08080","#CD5C5C","#FA8072","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#FA8072","#A52A2A","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#CD5C5C","#F08080","#CD5C5C","#FA8072","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#FFFFFF","#FFFFFF","#FA8072","#F08080","#F08080","#F08080","#FFFFFF","#FA8072","#F08080","#F08080","#FA8072","#FFFFFF","#A52A2A","#FA8072","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#FA8072","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#FA8072","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#F08080","#F08080","#F08080","#FA8072","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#F08080","#FA8072","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#F08080","#CD5C5C","#F08080","#FFFFFF","#FFFFFF","#CD5C5C","#FA8072","#A52A2A","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#FA8072","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#FFFFFF","#CD5C5C","#CD5C5C","#A52A2A","#CD5C5C","#FFFFFF","#F08080","#CD5C5C","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#CD5C5C","#F08080","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#CD5C5C","#CD5C5C","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#CD5C5C","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FA8072","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#A52A2A","#FFFFFF","#CD5C5C","#A52A2A","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#F08080","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#A52A2A","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#A52A2A","#FFFFFF","#FFFFFF","#CD5C5C","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#CD5C5C","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"],["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"]],"backgrounds":[["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"],["transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent","transparent"]]}];
+      const playbackSpeed = Math.max(1, 0.1);
+      let currentFrameIndex = 0;
+      let animationTimeout = null;
+      let isPlaying = false;
+  let isLooping = true;
+      let activeFrameElement = null;
+
+      const animationCanvas = document.getElementById('animationCanvas');
+      const controls = {
+        prev: document.getElementById('control-prev'),
+        play: document.getElementById('control-play'),
+        stop: document.getElementById('control-stop'),
+        next: document.getElementById('control-next'),
+        loop: document.getElementById('control-loop'),
+        frameValue: document.getElementById('frame-indicator')
+      };
+
+      const ICONS = {
+        skipBack: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 20 4 12l6-8"></path><path d="M20 19V5"></path></svg>',
+        play: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18l15-9Z"></path></svg>',
+        stop: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"></rect></svg>',
+        skipForward: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 4 6 8-6 8"></path><path d="M4 5v14"></path></svg>',
+        loop: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"></path><path d="M3 11v-1a4 4 0 0 1 4-4h14"></path><path d="M7 22l-4-4 4-4"></path><path d="M21 13v1a4 4 0 0 1-4 4H3"></path></svg>'
+      };
+
+      const iconAssignments = [
+        ['prev', ICONS.skipBack],
+        ['play', ICONS.play],
+        ['stop', ICONS.stop],
+        ['next', ICONS.skipForward],
+        ['loop', ICONS.loop]
+      ];
+
+      iconAssignments.forEach(([key, icon]) => {
+        const button = controls[key];
+        if (button) {
+          button.innerHTML = icon;
+        }
+      });
+
+      function initializeFrames() {
+        if (!animationCanvas) return;
+
+        animationCanvas.innerHTML = '';
+
+        frameData.forEach((frame, index) => {
+          const frameDiv = document.createElement('div');
+          frameDiv.className = 'frame';
+          frameDiv.id = 'frame-' + index;
+
+          let frameContent = '';
+          for (let y = 0; y < frame.characters.length; y++) {
+            for (let x = 0; x < frame.characters[y].length; x++) {
+              const char = frame.characters[y][x];
+              const color = frame.colors[y][x];
+              const bgColor = frame.backgrounds[y][x];
+
+              if (char !== ' ' || bgColor !== 'transparent') {
+                const span = '<span style="color: ' + color +
+                  (bgColor !== 'transparent' ? '; background-color: ' + bgColor : '') +
+                  '">' + (char === ' ' ? '&nbsp;' : char.replace(/</g, '&lt;').replace(/>/g, '&gt;')) + '</span>';
+                frameContent += span;
+              } else {
+                frameContent += '&nbsp;';
+              }
+            }
+            if (y < frame.characters.length - 1) {
+              frameContent += '\n';
+            }
+          }
+
+          frameDiv.innerHTML = frameContent;
+          animationCanvas.appendChild(frameDiv);
+        });
+      }
+
+      function updateFrameIndicator() {
+        if (!controls.frameValue) return;
+
+        const totalFrames = frameData.length;
+        if (totalFrames === 0) {
+          controls.frameValue.textContent = '0 / 0';
+          return;
+        }
+
+        const totalDigits = Math.max(1, String(totalFrames).length);
+        const currentValue = String(currentFrameIndex + 1).padStart(totalDigits, '0');
+        const totalValue = String(totalFrames).padStart(totalDigits, '0');
+
+        controls.frameValue.textContent = currentValue + ' / ' + totalValue;
+      }
+
+      function updatePlayButton() {
+        if (!controls.play) return;
+        controls.play.innerHTML = ICONS.play;
+        controls.play.classList.remove('is-primary');
+        controls.play.setAttribute('aria-label', 'Play animation');
+      }
+
+      function updateLoopButton() {
+        if (!controls.loop) return;
+        controls.loop.classList.toggle('is-active', isLooping);
+        controls.loop.setAttribute('aria-pressed', String(isLooping));
+        controls.loop.setAttribute('aria-label', isLooping ? 'Disable loop' : 'Enable loop');
+      }
+
+      function updateControlStates() {
+        const totalFrames = frameData.length;
+        const hasFrames = totalFrames > 0;
+
+        if (controls.prev) {
+          controls.prev.disabled = !hasFrames || isPlaying || currentFrameIndex === 0;
+        }
+        if (controls.next) {
+          controls.next.disabled = !hasFrames || isPlaying || currentFrameIndex >= totalFrames - 1;
+        }
+        if (controls.stop) {
+          controls.stop.disabled = !hasFrames || !isPlaying;
+        }
+        if (controls.play) {
+          controls.play.disabled = !hasFrames || isPlaying;
+        }
+
+        updatePlayButton();
+        updateLoopButton();
+      }
+
+      function clearAnimationTimer() {
+        if (animationTimeout !== null) {
+          clearTimeout(animationTimeout);
+          animationTimeout = null;
+        }
+      }
+
+      function showFrame(index) {
+        if (index < 0 || index >= frameData.length) return;
+        const nextFrame = document.getElementById('frame-' + index);
+        if (!nextFrame) return;
+
+        nextFrame.classList.add('active');
+
+        if (activeFrameElement && activeFrameElement !== nextFrame) {
+          activeFrameElement.classList.remove('active');
+        }
+
+        activeFrameElement = nextFrame;
+        currentFrameIndex = index;
+        updateFrameIndicator();
+        updateControlStates();
+      }
+
+      function scheduleNextFrame() {
+        if (!isPlaying || frameData.length === 0) return;
+
+        const currentFrame = frameData[currentFrameIndex];
+        const duration = Math.max((currentFrame?.duration || 100) / playbackSpeed, 16);
+
+        animationTimeout = window.setTimeout(() => {
+          animationTimeout = null;
+
+          if (!isPlaying) {
+            return;
+          }
+
+          let nextIndex = currentFrameIndex + 1;
+
+          if (nextIndex >= frameData.length) {
+            if (isLooping) {
+              nextIndex = 0;
+            } else {
+              stopAnimation({ reset: false });
+              return;
+            }
+          }
+
+          showFrame(nextIndex);
+          scheduleNextFrame();
+        }, duration);
+      }
+
+      function startAnimation() {
+        if (frameData.length === 0 || isPlaying) return;
+        isPlaying = true;
+        updateControlStates();
+        scheduleNextFrame();
+      }
+
+      function stopAnimation({ reset = true } = {}) {
+        const wasPlaying = isPlaying;
+
+        if (!wasPlaying && !reset) {
+          updateControlStates();
+          return;
+        }
+
+        isPlaying = false;
+        clearAnimationTimer();
+
+        if (reset && frameData.length > 0) {
+          showFrame(0);
+          return;
+        }
+
+        updateControlStates();
+      }
+
+      function goToPreviousFrame() {
+        if (isPlaying || currentFrameIndex === 0) return;
+        showFrame(currentFrameIndex - 1);
+      }
+
+      function goToNextFrame() {
+        if (isPlaying || currentFrameIndex >= frameData.length - 1) return;
+        showFrame(currentFrameIndex + 1);
+      }
+
+      if (controls.prev) {
+        controls.prev.addEventListener('click', goToPreviousFrame);
+      }
+      if (controls.play) {
+        controls.play.addEventListener('click', () => {
+          if (!isPlaying) {
+            startAnimation();
+          }
+        });
+      }
+      if (controls.stop) {
+        controls.stop.addEventListener('click', () => stopAnimation({ reset: true }));
+      }
+      if (controls.next) {
+        controls.next.addEventListener('click', goToNextFrame);
+      }
+      if (controls.loop) {
+        controls.loop.addEventListener('click', () => {
+          isLooping = !isLooping;
+          updateLoopButton();
+        });
+      }
+
+      window.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          stopAnimation({ reset: false });
+        }
+      });
+
+      window.onload = function() {
+        initializeFrames();
+
+        if (frameData.length > 0) {
+          showFrame(0);
+          startAnimation();
+        } else {
+          updateFrameIndicator();
+          updateControlStates();
+        }
+
+      };
+    </script>
+</body>
+</html>
