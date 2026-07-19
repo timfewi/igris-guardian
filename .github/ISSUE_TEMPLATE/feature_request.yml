@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest something Igris should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Igris reads untrusted text and returns a verdict. That is the entire
+        product. It will not rewrite input, answer, act, run tools, or allow
+        the compiled system prompt to be overridden at runtime — those are
+        security properties, not gaps. See CONTRIBUTING.md before writing this up.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you hitting?
+      description: Describe the situation, not the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should Igris do about it?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried or considered?
+      description: Including whether policy on your side of the verdict could cover it.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This does not require Igris to rewrite, answer, act, or run anything — it stays verdict-only
+          required: true

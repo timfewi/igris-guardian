@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/timfewi/igris/security/advisories/new
+    about: Report privately. Detection misses are ordinary issues — see SECURITY.md for the line.
+  - name: Questions and ideas
+    url: https://github.com/timfewi/igris/discussions
+    about: Usage questions, deployment advice, and half-formed ideas.
