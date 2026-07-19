@@ -52,6 +52,11 @@ pub struct Stage2Config {
     pub model: String,
     /// Env var name holding the API key (never the key itself).
     pub api_key_env: String,
+    /// Path to a file holding the API key, for secret managers that decrypt to a
+    /// file rather than an env var (agenix `/run/agenix/*`, systemd
+    /// `LoadCredential`, Docker/K8s secrets). Takes precedence over
+    /// `api_key_env`. Empty = unused. Never the key itself.
+    pub api_key_file: String,
     pub timeout_ms: u64,
 }
 
@@ -62,8 +67,25 @@ impl Default for Stage2Config {
             base_url: "https://api.openai.com/v1".to_string(),
             model: "deepseek-v4-pro".to_string(),
             api_key_env: "IGRIS_STAGE2_KEY".to_string(),
+            api_key_file: String::new(),
             timeout_ms: 5000,
         }
+    }
+}
+
+impl Stage2Config {
+    /// The API key: `api_key_file` if set, else the `api_key_env` env var.
+    /// Trailing whitespace is trimmed — secret files almost always end in a
+    /// newline, and a stray `\n` in a bearer header is a 401 that looks like a
+    /// bad key. Returns `None` if unset, unreadable, or empty.
+    pub fn api_key(&self) -> Option<String> {
+        let raw = if self.api_key_file.is_empty() {
+            std::env::var(&self.api_key_env).ok()?
+        } else {
+            std::fs::read_to_string(expand_tilde(&self.api_key_file)).ok()?
+        };
+        let key = raw.trim();
+        (!key.is_empty()).then(|| key.to_string())
     }
 }
 
@@ -171,5 +193,36 @@ mod tests {
     fn unknown_field_is_rejected() {
         let err = toml::from_str::<Config>("allow_mode = true\n");
         assert!(err.is_err(), "unknown fields must be a hard error");
+    }
+
+    #[test]
+    fn api_key_file_takes_precedence_and_trims() {
+        let p = std::env::temp_dir().join(format!("igris-key-test-{}", std::process::id()));
+        // Secret files from agenix/LoadCredential end in a newline; a stray \n in
+        // the bearer header is a 401 that looks like a bad key.
+        std::fs::write(&p, "sk-from-file\n").expect("write temp key");
+
+        let from_file = Stage2Config {
+            api_key_file: p.to_string_lossy().into_owned(),
+            api_key_env: "IGRIS_KEY_THAT_IS_NOT_SET".to_string(),
+            ..Stage2Config::default()
+        };
+        assert_eq!(from_file.api_key().as_deref(), Some("sk-from-file"));
+
+        // Unreadable file must not silently fall back to the env var.
+        let missing = Stage2Config {
+            api_key_file: "/nonexistent/igris-key".to_string(),
+            ..Stage2Config::default()
+        };
+        assert_eq!(missing.api_key(), None);
+
+        // No file configured and env unset -> None, not Some("").
+        let neither = Stage2Config {
+            api_key_env: "IGRIS_KEY_THAT_IS_NOT_SET".to_string(),
+            ..Stage2Config::default()
+        };
+        assert_eq!(neither.api_key(), None);
+
+        std::fs::remove_file(&p).ok();
     }
 }
