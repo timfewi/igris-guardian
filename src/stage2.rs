@@ -125,7 +125,7 @@ async fn try_classify(
     };
 
     let mut req = client.post(&url).json(&body);
-    if let Ok(key) = std::env::var(&cfg.api_key_env) {
+    if let Some(key) = cfg.api_key() {
         req = req.bearer_auth(key);
     }
 
@@ -194,6 +194,7 @@ mod tests {
             base_url,
             model: "test-model".to_string(),
             api_key_env: "IGRIS_TEST_STAGE2_KEY_UNSET".to_string(),
+            api_key_file: String::new(),
             timeout_ms: 2000,
         }
     }

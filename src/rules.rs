@@ -115,7 +115,11 @@ fn build_rules() -> Vec<CompiledRule> {
         certain(
             "instr-you-are-now",
             85,
-            r"(?i)you\s+are\s+now\s+(?:a|an|the)\s+(?:\w+\s+){0,2}(?:AI|A\.I\.|assistant|model|chatbot|bot|agent|LLM|GPT|persona|character)\b",
+            // `agent`/`bot`/`model` convict only behind an unrestricted-flavor
+            // modifier: "you are now a free agent" is an attack, "you are now the
+            // (on-call) agent" is a handover note in any orchestration repo.
+            // The inherently-reassigning nouns keep the loose modifier slot.
+            r"(?i)you\s+are\s+now\s+(?:a|an|the)\s+(?:(?:[\w-]+\s+){0,2}(?:AI|A\.I\.|assistant|chatbot|LLM|GPT|persona|character)|(?:free|unrestricted|unfiltered|uncensored|unbound|autonomous|rogue|jailbroken|liberated)\s+(?:agent|bot|model))\b",
         ),
         // "act as a/an/the <word>" excluding plan/phase/wave — handled below (no lookahead in `regex`).
         // "Pretend to be offline in this test" is ordinary test-scaffolding speech,
@@ -348,7 +352,10 @@ fn build_rules() -> Vec<CompiledRule> {
         ambiguous(
             "jailbreak-persona-mode",
             70,
-            r"(?i)(DAN|DUDE|STAN|JAILBREAK|MARY|SANTACLAUS|hypothetical).{0,30}(response|answer|mode)",
+            // Acronym personas are word-bounded and case-sensitive (the convention
+            // jailbreak-persona-assign already uses): lowercase "standard",
+            // "Mary", "abundant" must not corroborate a conviction.
+            r"(?:(?i:\b(?:jailbreak\w*|hypothetical)\b)|\b(?:DAN|DUDE|STAN|MARY|SANTACLAUS)\b).{0,30}(?i:\b(?:responses?|answers?|modes?)\b)",
         ),
         // Direct assignment of a known jailbreak persona. The generic
         // `jailbreak-persona-mode` above needs a trailing "mode"/"answer"/"response",
@@ -376,7 +383,9 @@ fn build_rules() -> Vec<CompiledRule> {
         ambiguous(
             "tool-exec-codeblock",
             35,
-            r"(?i)```.*(shell|bash|sh|zsh|powershell|cmd)",
+            // Anchored to the fence info string with a bounded token, so `sh`
+            // stops matching inside "push"/"finish" in inline code spans.
+            r"(?im)^\s*(?:```|~~~)\s*(?:shell|bash|sh|zsh|powershell|cmd)\b",
         ),
         ambiguous(
             "tool-exec-run",
@@ -977,7 +986,14 @@ pub fn aggregate(hits: &std::collections::BTreeMap<String, Hit>) -> (u8, Vec<Str
         return (0, Vec::new(), false);
     }
     let max_weight = hits.values().map(|h| h.weight).max().unwrap() as u32;
-    let extra = (hits.len() - 1) as u32;
+    // Quoted hits are mentions, not uses (see [`Hit::quoted`]) — they keep their
+    // (halved) weight but must not inflate breadth, or a document that merely
+    // *enumerates* N patterns (a threat model, this file) scores as N attacks.
+    let extra = hits
+        .values()
+        .filter(|h| !h.quoted)
+        .count()
+        .saturating_sub(1) as u32;
     let mut score = (max_weight + 10 * extra).min(100) as u8;
     let mut reasons: Vec<String> = hits.keys().cloned().collect();
 
@@ -1012,4 +1028,47 @@ pub fn only_operator_prerogative(reasons: &[String]) -> bool {
                 Some(Category::Authority) | Some(Category::Jailbreak) | Some(Category::Action)
             )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn hit(id: &'static str, weight: u8, quoted: bool) -> Hit {
+        Hit {
+            id,
+            weight,
+            tier: Tier::Ambiguous,
+            quoted,
+        }
+    }
+
+    /// A document that *enumerates* patterns (every hit quoted/demoted) must
+    /// score its max weight, not max + 10 per mention — breadth inflation from
+    /// mentions is how igris blocked its own README and rules.rs.
+    #[test]
+    fn quoted_hits_do_not_inflate_breadth() {
+        let mut hits = BTreeMap::new();
+        hits.insert("a".to_string(), hit("a", 45, false));
+        hits.insert("b".to_string(), hit("b", 40, true));
+        hits.insert("c".to_string(), hit("c", 35, true));
+        let (score, _, decisive) = aggregate(&hits);
+        assert_eq!(score, 45, "quoted hits must not add breadth");
+        assert!(!decisive);
+
+        // All-quoted: saturating_sub keeps extra at 0 instead of underflowing.
+        let mut all_quoted = BTreeMap::new();
+        all_quoted.insert("a".to_string(), hit("a", 45, true));
+        all_quoted.insert("b".to_string(), hit("b", 40, true));
+        let (score, _, _) = aggregate(&all_quoted);
+        assert_eq!(score, 45);
+
+        // Unquoted hits still accumulate breadth as before.
+        let mut unquoted = BTreeMap::new();
+        unquoted.insert("a".to_string(), hit("a", 45, false));
+        unquoted.insert("b".to_string(), hit("b", 40, false));
+        let (score, _, _) = aggregate(&unquoted);
+        assert_eq!(score, 55);
+    }
 }
