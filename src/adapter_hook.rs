@@ -6,7 +6,7 @@
 
 use crate::config::Config;
 use crate::engine::Engine;
-use crate::{Action, FailMode, Verdict};
+use crate::{Action, FailMode, Trust, Verdict};
 use serde_json::Value;
 use std::io::Read;
 
@@ -46,7 +46,12 @@ async fn handle_user_prompt_submit(engine: &Engine, data: &Value) -> i32 {
         None => return 0,
     };
 
-    let verdict = engine.scan(prompt, "user-prompt", FailMode::DegradeStage1).await;
+    let verdict = engine
+        // The operator typed this. Phrasing alone must not lock them out of their
+        // own session; smuggled control characters still block, since those mean
+        // the text was pasted from somewhere they do not control.
+        .scan_trusted(prompt, "user-prompt", Trust::User, FailMode::DegradeStage1)
+        .await;
     match verdict.action {
         Action::Block => {
             let out = serde_json::json!({
@@ -83,7 +88,10 @@ async fn handle_post_tool_use(engine: &Engine, data: &Value) -> i32 {
         None => return 0,
     };
     let is_mcp = tool_name.starts_with("mcp__");
-    let scanned = matches!(tool_name.as_str(), "Read" | "WebFetch" | "Bash" | "WebSearch") || is_mcp;
+    let scanned = matches!(
+        tool_name.as_str(),
+        "Read" | "WebFetch" | "Bash" | "WebSearch"
+    ) || is_mcp;
     if !scanned {
         return 0;
     }
@@ -102,13 +110,20 @@ async fn handle_post_tool_use(engine: &Engine, data: &Value) -> i32 {
     }
 
     let source = source_label(&tool_name, tool_input);
-    let mut verdict = engine.scan(&content, &source, FailMode::DegradeStage1).await;
+    let mut verdict = engine
+        .scan(&content, &source, FailMode::DegradeStage1)
+        .await;
 
     // Excluded paths (Read only, mirrors gsd-read-injection-scanner.js): downgrade, never skip.
     if tool_name == "Read" && verdict.action == Action::Block {
         if let Some(fp) = tool_input.get("file_path").and_then(|v| v.as_str()) {
             if is_excluded_path(fp) {
-                verdict = Verdict::new(verdict.score, Action::Warn, verdict.reasons);
+                verdict = Verdict::new(
+                    verdict.score,
+                    Action::Warn,
+                    verdict.confidence,
+                    verdict.reasons,
+                );
             }
         }
     }
@@ -161,7 +176,11 @@ fn extract_content_field(resp: &Value) -> String {
                 .iter()
                 .map(|b| match b {
                     Value::String(s) => s.clone(),
-                    Value::Object(_) => b.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string(),
+                    Value::Object(_) => b
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     _ => String::new(),
                 })
                 .collect::<Vec<_>>()
@@ -192,7 +211,13 @@ fn source_label(tool_name: &str, tool_input: &Value) -> String {
             .and_then(|v| v.as_str())
             .unwrap_or(tool_name)
             .to_string(),
-        "Bash" => truncate(tool_input.get("command").and_then(|v| v.as_str()).unwrap_or(""), 80),
+        "Bash" => truncate(
+            tool_input
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+            80,
+        ),
         _ => tool_name.to_string(),
     }
 }

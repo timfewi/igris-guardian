@@ -17,6 +17,14 @@ pub struct Config {
     pub max_scan_bytes: usize,
     /// Append-only JSONL audit log path (`~` expanded).
     pub audit_log: String,
+    /// Record a 200-character excerpt of scanned content alongside each verdict.
+    ///
+    /// Off by default, and it should stay off outside deliberate tuning sessions:
+    /// the scanner sees command output, file contents and request bodies, so the
+    /// excerpt is an excellent way to end up with credentials in a log file that
+    /// nothing rotates. The sha256 is always recorded and is enough to correlate
+    /// repeat offenders without retaining their content.
+    pub audit_excerpt: bool,
     pub stage2: Stage2Config,
     pub serve: ServeConfig,
 }
@@ -28,6 +36,7 @@ impl Default for Config {
             escalate_threshold: 50,
             max_scan_bytes: 2_000_000,
             audit_log: "~/.local/state/igris/audit.jsonl".to_string(),
+            audit_excerpt: false,
             stage2: Stage2Config::default(),
             serve: ServeConfig::default(),
         }

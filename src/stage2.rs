@@ -98,7 +98,11 @@ fn map_classification(s: &str) -> Option<Classification> {
 
 /// One attempt: network call + strict parse. `None` on any failure (network,
 /// bad status, malformed envelope, non-conforming/unknown-field reply).
-async fn try_classify(client: &reqwest::Client, cfg: &Stage2Config, text: &str) -> Option<Classification> {
+async fn try_classify(
+    client: &reqwest::Client,
+    cfg: &Stage2Config,
+    text: &str,
+) -> Option<Classification> {
     let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
     let body = ChatRequest {
         model: cfg.model.clone(),
@@ -115,7 +119,9 @@ async fn try_classify(client: &reqwest::Client, cfg: &Stage2Config, text: &str) 
         temperature: 0,
         // ponytail: sent unconditionally; strict-parse+retry degrades safely if an
         // endpoint rejects/ignores it (see open item in task return).
-        response_format: ResponseFormat { kind: "json_object" },
+        response_format: ResponseFormat {
+            kind: "json_object",
+        },
     };
 
     let mut req = client.post(&url).json(&body);

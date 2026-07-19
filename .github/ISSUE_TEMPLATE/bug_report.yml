@@ -1,0 +1,66 @@
+name: Bug report
+description: Something other than detection quality is broken.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a benign string that blocks or a malicious one that passes, use the
+        **Detection miss** template instead.
+
+        For a crash, a panic, or anything that breaks a security property Igris
+        claims, see [SECURITY.md](../blob/main/SECURITY.md) — report privately.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands, smallest version that still fails.
+      render: console
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How are you running Igris?
+      options:
+        - "igris scan"
+        - "igris serve"
+        - "igris hook"
+        - "As a library"
+        - "Other"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and how you installed it
+      placeholder: "NixOS 25.05, nix run / Ubuntu 24.04, cargo install"
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config
+      description: Your config.toml with secrets removed.
+      render: toml
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or logs
+      render: text
