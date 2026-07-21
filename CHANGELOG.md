@@ -21,4 +21,4 @@ false positives (2/203 benign).
 - Open-source contribution scaffolding: `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, issue and pull request templates, Dependabot.
 
-[Unreleased]: https://github.com/timfewi/igris/commits/main
+[Unreleased]: https://github.com/timfewi/igris-guardian/commits/main

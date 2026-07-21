@@ -48,8 +48,9 @@ scanner itself is the attack surface:
 ## How to report
 
 Use GitHub's [private vulnerability
-reporting](https://github.com/timfewi/igris/security/advisories/new) on this
-repository. If that is unavailable to you, email **hello@timwitter.com** with
+reporting](https://github.com/timfewi/igris-guardian/security/advisories/new)
+on this repository. If that is unavailable to you, email
+**hello@timwitter.com** with
 `[igris-security]` in the subject.
 
 Please include:
