@@ -279,6 +279,24 @@ efficient way to accumulate credentials in a file that nothing rotates.
 **There is no rotation.** Point `audit_log` at a path your logrotate or
 systemd-tmpfiles config already manages.
 
+### `igris console` — live dashboard
+
+A terminal dashboard over the audit log: verdict split, how much of the traffic
+each stage decided, the score distribution, which rules fire most, and a live
+tail of events.
+
+![igris console](public/images/igris-tui-live.png)
+
+```console
+$ igris console --config /etc/igris/config.toml
+```
+
+`q` quit · `p` pause the tail · `/` filter · `s` cycle sort · `↑`/`↓` navigate.
+
+It reads the audit log and nothing else — it cannot change a verdict, a rule, or
+the config, and it shows only what the log already holds. With `audit_excerpt`
+off, that means hashes and rule ids, never the scanned text.
+
 ## Limits
 
 Read this part.

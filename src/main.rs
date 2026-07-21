@@ -1,4 +1,4 @@
-//! Igris Guardian entry point. Hand-rolled arg dispatch (3 subcommands, no clap).
+//! Igris Guardian entry point. Hand-rolled arg dispatch (4 subcommands, no clap).
 
 use igris_guardian::config::Config;
 use igris_guardian::Trust;
