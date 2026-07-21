@@ -119,7 +119,7 @@ meaningful whoever typed them.
 ```console
 $ cargo install --path .
 $ nix build                                     # or
-$ nix run github:timfewi/igris -- scan "text"
+$ nix run github:timfewi/igris-guardian -- scan "text"
 ```
 
 ## Three ways to use it
@@ -247,7 +247,7 @@ Set by the adapter, not by config — it is a safety property, not a preference.
 
 ```nix
 {
-  inputs.igris.url = "github:timfewi/igris";
+  inputs.igris.url = "github:timfewi/igris-guardian";
 
   # ...
   imports = [ inputs.igris.nixosModules.default ];
