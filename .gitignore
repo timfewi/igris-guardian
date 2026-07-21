@@ -2,3 +2,23 @@
 /.claude/
 .igris-build-workflow.js
 *.bak
+
+# Runtime state — audit logs carry real prompt hashes, paths and timestamps.
+# (tests/corpus/*.jsonl stays tracked: those are fixtures, not runtime output.)
+audit.jsonl
+*.audit.jsonl
+/state/
+
+# Local config — holds upstream URLs, key file paths, auth token env names.
+config.toml
+*.local.toml
+
+# Secrets, never tracked
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# Internal design notes, not part of the public project
+igris-guard-wall-report.md
