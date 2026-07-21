@@ -821,7 +821,11 @@ fn panel_rules(w: usize, a: &Agg) -> Vec<String> {
         .iter()
         .map(|(id, n)| {
             let cells = (n * bar_w / max).max(usize::from(*n > 0));
-            let color = if rule_is_hot(id) { C_BAR_HOT } else { C_BAR_COOL };
+            let color = if rule_is_hot(id) {
+                C_BAR_HOT
+            } else {
+                C_BAR_COOL
+            };
             // `pad`, not `{:<22}`: the string carries SGR escapes and the format
             // width counts them as columns, which shifts every row differently.
             format!(
@@ -928,7 +932,10 @@ fn panel_events(
     if lines.is_empty() {
         lines.push(match (v.filter.is_empty(), waiting) {
             (false, _) => format!("{C_DIM}no events match \"{}\"{RESET}", sanitize(&v.filter)),
-            (true, Some(p)) => format!("{C_DIM}waiting for {}{RESET}", sanitize(&p.to_string_lossy())),
+            (true, Some(p)) => format!(
+                "{C_DIM}waiting for {}{RESET}",
+                sanitize(&p.to_string_lossy())
+            ),
             (true, None) => format!("{C_DIM}no non-pass verdicts logged yet{RESET}"),
         });
     }
@@ -959,7 +966,10 @@ fn meta_block(w: usize, cfg: &Config, uptime: Duration) -> Vec<String> {
         // runs, so reaching this line proves the pinned hash matched.
         kv(
             "guard",
-            format!("{C_PASS}verified{RESET} {C_DIM}{}{RESET}", &GUARDIAN_PROMPT_SHA256[..12]),
+            format!(
+                "{C_PASS}verified{RESET} {C_DIM}{}{RESET}",
+                &GUARDIAN_PROMPT_SHA256[..12]
+            ),
         ),
         kv("audit", tail_path(&sanitize(&path), w.saturating_sub(9))),
         kv(
@@ -1004,7 +1014,11 @@ fn header(w: usize, rows: usize, cfg: &Config, uptime: Duration) -> Vec<String> 
     // One if-statement, not a layout engine: the knight only appears when there
     // is unambiguously room for it.
     let show_knight = rows >= KNIGHT_MIN_ROWS && w >= 107;
-    let knight = if show_knight { knight_rows() } else { Vec::new() };
+    let knight = if show_knight {
+        knight_rows()
+    } else {
+        Vec::new()
+    };
     let kw = if show_knight { 14 } else { 0 };
     // Without the knight the header is exactly the centre block: 4 banner rows,
     // a blank, the wordmark and the tagline. Anything less truncates the tagline
@@ -1077,7 +1091,10 @@ fn frame(
     out.push(String::new());
 
     let c2 = split(w, 2, 1);
-    out.extend(hjoin(&[panel_config(c2[0], cfg), panel_rules(c2[1], &a)], 1));
+    out.extend(hjoin(
+        &[panel_config(c2[0], cfg), panel_rules(c2[1], &a)],
+        1,
+    ));
     out.push(String::new());
 
     // Events take whatever is left, minus its own border and the footer.
@@ -1332,7 +1349,10 @@ mod tests {
         assert_eq!(a.p95, 100); // rank ceil(0.95*10) = 10 -> sorted[9]
 
         let empty = aggregate(&[]);
-        assert_eq!((empty.min, empty.median, empty.p95, empty.max), (0, 0, 0, 0));
+        assert_eq!(
+            (empty.min, empty.median, empty.p95, empty.max),
+            (0, 0, 0, 0)
+        );
     }
 
     #[test]
@@ -1377,16 +1397,28 @@ mod tests {
             rec("block", 90, true, "certain", &["instr.override"]),
             rec("warn", 10, false, "ambiguous", &[]),
         ];
-        let f = View { filter: "Instr".into(), ..Default::default() };
+        let f = View {
+            filter: "Instr".into(),
+            ..Default::default()
+        };
         let hit = view_rows(&recs, &f);
         assert_eq!(hit.len(), 1);
         assert_eq!(hit[0].score, 90);
 
-        let by_score = View { sort: 1, ..Default::default() };
-        let s: Vec<u8> = view_rows(&recs, &by_score).iter().map(|r| r.score).collect();
+        let by_score = View {
+            sort: 1,
+            ..Default::default()
+        };
+        let s: Vec<u8> = view_rows(&recs, &by_score)
+            .iter()
+            .map(|r| r.score)
+            .collect();
         assert_eq!(s, vec![10, 30, 90]);
 
-        let by_action = View { sort: 3, ..Default::default() };
+        let by_action = View {
+            sort: 3,
+            ..Default::default()
+        };
         let a: Vec<&str> = view_rows(&recs, &by_action)
             .iter()
             .map(|r| r.action.as_str())
@@ -1400,7 +1432,10 @@ mod tests {
             .map(|i| rec("warn", i, false, "ambiguous", &["r"]))
             .collect();
         let rows: Vec<&Rec> = recs.iter().collect();
-        let mut v = View { sel: 99, ..Default::default() };
+        let mut v = View {
+            sel: 99,
+            ..Default::default()
+        };
         let out = panel_events(60, 4, 10, &rows, &mut v, None);
         assert_eq!(v.sel, 9, "cursor clamps to the visible set");
         // 2-line records in a 4-row body: the window holds exactly two records,

@@ -49,7 +49,7 @@ scanner itself is the attack surface:
 
 Use GitHub's [private vulnerability
 reporting](https://github.com/timfewi/igris/security/advisories/new) on this
-repository. If that is unavailable to you, email **timwitter0@gmail.com** with
+repository. If that is unavailable to you, email **hello@timwitter.com** with
 `[igris-security]` in the subject.
 
 Please include:
