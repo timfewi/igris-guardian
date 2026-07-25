@@ -91,6 +91,11 @@ section of the README before trying to convict on them at the regex layer.
 - Tests for anything that isn't a typo fix.
 - If you changed detection behaviour, paste the before/after corpus numbers.
 
+By submitting a contribution, you agree to license it under the repository's
+[MIT License](LICENSE). See [LICENSING.md](LICENSING.md) for the boundary
+between the open-source code, project trademarks, and future enterprise
+offerings.
+
 ## Reporting security issues
 
 Do not open a public issue for a vulnerability in Igris itself. See

@@ -1,6 +1,6 @@
 ![Igris Guardian](public/images/igris-readme-banner.png)
 
-# Igris Guardian
+# Igris Guardian™
 
 A prompt-injection firewall for agentic systems. It reads untrusted text and
 returns a verdict. That is the entire product.
@@ -367,4 +367,7 @@ the daily work here. Breaking a property Igris *claims* to hold is not; see
 
 ## License
 
-MIT
+The open-source core is licensed under the [MIT License](LICENSE).
+Igris Guardian™ is a trademark of Tim Witter. See
+[LICENSING.md](LICENSING.md) for the open-source, trademark, and future
+enterprise boundaries.
