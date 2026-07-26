@@ -50,6 +50,11 @@ impl Engine {
             for h in self.rules.hits(v) {
                 crate::rules::merge_hit(&mut hits, h);
             }
+            // Per variant, not just the original: leetspeak folds "p@ssw0rd"
+            // back to a noun the feeler recognises.
+            for h in crate::rules::feeler_hits(v, self.cfg.escalate_threshold) {
+                crate::rules::merge_hit(&mut hits, h);
+            }
         }
         for f in &findings {
             crate::rules::merge_hit(

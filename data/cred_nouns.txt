@@ -1,0 +1,74 @@
+# Credential nouns for the feeler tier (`feeler-cred-noun`).
+#
+# Adding a line here is the cheapest useful contribution to this scanner. No
+# Rust required, no rule to design: if a word names a secret in some language or
+# some jargon, it belongs here.
+#
+# What this list does. The feeler does not try to recognise the *demand* — that
+# is an unbounded class ("read", "reed", "retrieve", "kindly obtain") and every
+# verb list is one synonym behind. It looks for the noun instead, and lifts the
+# text to the escalation threshold so the stage-2 classifier decides. Nothing
+# here can block on its own. A noun is a reason to ask, never a verdict, which
+# is why an over-eager entry costs a classifier call rather than a false block.
+#
+# Format: one noun per line, lowercase. Blank lines and `#` comments ignored.
+#
+# Matching depends on length, so pick the full word where you can:
+#   - 8 characters or more: matched through one typo AND through
+#     visually-confusable glyphs, so `password` also catches `passwrd`,
+#     `pa55w0rd`, `p4ssword`, `passw|rd` and `p-a-s-s-w-o-r-d`.
+#   - shorter: matched exactly (after glyph folding). Short words have too many
+#     innocent neighbours to fuzz — `passwd` is one edit from `passed`, which
+#     appears in every test-run output there is.
+#
+# Multi-word and path-shaped secrets (`api key`, `~/.ssh`, `id_rsa`, `${X_TOKEN}`)
+# are not word-tokens and live in `cred_noun_re()` in src/rules.rs instead.
+
+# --- English ---
+password
+passwords
+passphrase
+passphrases
+credential
+credentials
+passwd
+pw
+secrets
+keyfile
+keyfiles
+apikey
+apikeys
+seedphrase
+mnemonic
+privatekey
+accesstoken
+refreshtoken
+
+# --- German ---
+passwort
+passworter
+passwoerter
+kennwort
+kennworter
+zugangsdaten
+anmeldedaten
+geheimnis
+
+# --- French / Spanish / Italian / Portuguese ---
+# Hyphenated forms fold to one token (`mot-de-passe` -> `motdepasse`); the
+# space-separated spelling does not, since matching is per word.
+motdepasse
+contrasena
+contrasenya
+credenciales
+senha
+palavrapasse
+paroladordine
+
+# --- Nordic / Dutch / Polish ---
+wachtwoord
+losenord
+adgangskode
+salasana
+haslo
+passord

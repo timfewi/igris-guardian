@@ -69,6 +69,35 @@ declined however good the code is:
 New detection rules, new languages, corpus cases, adapters, performance work,
 and documentation are all in scope.
 
+## Adding words, not code: `data/`
+
+Two lists ship as plain text and want no Rust at all. Adding a line to either is
+a real contribution, and the cheapest one available:
+
+- **`data/cred_nouns.txt`** — words that name a secret, in any language or
+  jargon. This exists because recognising the *demand* is a losing game: "read",
+  "reed", "retrieve", "kindly obtain" is an unbounded set and every verb list is
+  one synonym behind. The noun is the stable part, so the scanner looks for that
+  and asks stage 2 about the rest.
+- **`data/confusables.txt`** — glyphs that read as a letter. `pa55w0rd`,
+  `p4ssword`, `passw|rd` are all obvious to a human and to a model, and match
+  nothing spelled correctly.
+
+Both are compiled into the binary with `include_str!` rather than read at
+startup, deliberately. A blacklist the scanner loads from disk is a blacklist an
+attacker with write access can empty, and an emptied one fails silently: the
+scanner keeps reporting healthy while detecting nothing. Editable by people,
+fixed at build time — the same bargain the stage-2 guard prompt makes with its
+compiled-in hash.
+
+Nothing in these files can block on its own. A matching noun lifts the text to
+the escalation threshold so the stage-2 classifier decides, which is why an
+over-eager entry costs a classifier call rather than a false block. The one
+thing to check before adding a word: that it is not ordinary language. Run
+`cargo test` — `ordinary_words_do_not_read_as_credential_nouns` exists to catch
+exactly that, and it has already rejected one plausible-looking entry (`parola`,
+which is simply Italian for "word").
+
 ## Adding detection rules
 
 Stage 1 is deterministic and offline, so every rule is a permanent

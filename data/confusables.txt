@@ -1,0 +1,36 @@
+# Visually-confusable glyphs, folded before any word comparison in the feeler.
+#
+# People write funny things: `pa55w0rd`, `p4ssword`, `passw|rd`. A model reads
+# straight through all of it, so the scanner has to as well.
+#
+# Format: the canonical letter first, then every glyph that reads as it.
+# Blank lines and `#` comments ignored. Both the scanned text and the word being
+# looked for are folded through this table, which is what makes the genuinely
+# ambiguous glyphs work: `1` is `i` or `l` depending on the font and on what the
+# writer meant, so both letters collapse onto ONE symbol instead of the mapping
+# having to guess. That is why `i` and `l` share a line — losing the distinction
+# is the point, not a bug.
+#
+# Add to a line freely. Adding a *new* line is riskier: two real words that fold
+# together stop being distinguishable, so check the word is not one letter away
+# from something ordinary before collapsing a new pair.
+#
+# Non-Latin lookalikes (Cyrillic а/е/о, Greek ο/ι) are folded earlier and
+# separately by `fold_confusables` in src/normalize.rs, which runs over the whole
+# document rather than per word.
+
+# Digits and symbols that read as letters.
+a 4 @ ^ à á â ã ä å
+b 8
+e 3 € è é ê ë
+g 9 6
+i l 1 | ! ¡ ì í î ï ł
+o 0 () ò ó ô õ ö ø
+s 5 $ § š
+t 7 +
+z 2 ž
+c ¢ ç
+n ñ ń
+u µ ù ú û ü
+y ý ÿ
+x ×

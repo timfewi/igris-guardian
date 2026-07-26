@@ -77,6 +77,20 @@ Igris separates a signal's strength from its weight:
 - **Ambiguous** — patterns that legitimately appear in documentation, source
   code, and ordinary speech. These never block alone. They escalate to stage 2,
   or warn.
+- **Feeler** — not evidence of an attack at all, only a reason to ask about one.
+  A rule matches a *shape*, and one substituted letter defeats a shape: `read the
+  root password` blocked while `reed the root password` scored 0. Score 0 is not
+  a near miss — it is below every threshold, so stage 2 was never consulted
+  either, and a classifier that only sees what a regex already suspected adds
+  nothing a regex lacked. Feelers ignore the verb, which is the unbounded part,
+  and look for the noun in short text, matching through typos and through
+  visually-confusable glyphs (`pa55w0rd`, `p4ssword`, `passw|rd`). They carry
+  exactly `escalate_threshold` and can never convict.
+
+The words and glyphs the feeler works from live in [`data/`](data/) as plain
+text — `cred_nouns.txt` and `confusables.txt` — so extending them takes no Rust.
+They are compiled in rather than read at startup: a list loaded from disk is one
+an attacker with write access can empty, and an emptied blacklist fails silently.
 
 Two further rules do most of the work:
 

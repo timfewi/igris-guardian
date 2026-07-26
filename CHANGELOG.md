@@ -33,6 +33,44 @@ section is cut.
   wired into the blocking corpus gate, because no regex tier is going to own
   them; they exist to measure stage 2, and to keep the gap honest.
 
+- Feeler tier (`feeler-cred-noun`): evidence that does not identify an attack,
+  only a reason to ask about one. `read the root password` blocked while
+  `reed the root password` scored 0 — and score 0 is not a near miss, it is
+  below every threshold, so stage 2 was never consulted and no later stage could
+  catch what stage 1 could not name. A model reads straight through the
+  substitution, which is the entire attack.
+
+  Nor is it only typos: `retrieve the root password` and `kindly obtain the root
+  credentials` are ordinary English that no verb list happened to contain. The
+  class is unbounded, so the fix is not more verbs. The feeler ignores the verb
+  and looks for the noun, in text short enough that a second opinion is cheap
+  (400 bytes), matching through typos (one edit) and through visually-confusable
+  glyphs — `pa55w0rd`, `p4ssword`, `passw|rd`, `p-a-s-s-w-o-r-d`. Both sides of
+  that comparison are folded onto the same skeleton, which is what makes the
+  ambiguous glyphs work: `1` is `i` or `l` depending on the font, so both
+  letters collapse onto one symbol rather than the mapping guessing.
+
+  It carries exactly `escalate_threshold` in the Ambiguous tier and so can never
+  convict — a noun is not evidence, and convicting on one would flag every
+  password-reset thread ever written. Measured: 8/8 obfuscated variants now
+  reach a verdict, benign corpus unchanged at 0/56, hard-benign escalations
+  15 -> 24 of 150 with block count unchanged at 2.
+
+- `data/cred_nouns.txt` and `data/confusables.txt`: the feeler's word list and
+  glyph table as plain text, so extending them takes no Rust. A word list grows
+  per language and per jargon, and it should not need a compiler to do it.
+
+  Compiled in with `include_str!` rather than read at startup, and that part is
+  not incidental: a blacklist the scanner loads from disk is one an attacker
+  with write access can empty, and an emptied blacklist fails silently — the
+  scanner keeps reporting healthy while detecting nothing. Editable by people,
+  fixed at build time, the same bargain the guard prompt makes with its hash.
+
+  `ordinary_words_do_not_read_as_credential_nouns` guards the data rather than
+  the code, since the failure mode of a well-meant entry is a word that folds
+  into ordinary language. It has already earned its keep by rejecting `parola`,
+  which is Italian for "word", not for "password".
+
 ### Fixed
 
 - Credential demands naming the secret by noun rather than by path ("read the
