@@ -181,9 +181,12 @@ stage 2 degrades to a warning rather than a block.
 
 #### Codex
 
-Codex exposes the stable `PostToolUse` hook with the same event and response
-shape, so it uses the existing adapter. Add this entry to
-`~/.codex/hooks.json`:
+Codex exposes `PostToolUse` and `UserPromptSubmit` with the same
+`hook_event_name` payload and the same `decision` / `hookSpecificOutput`
+response contract, so it uses the existing adapter unchanged — there is no
+Codex-specific code path. Verified against `codex-cli` 0.145.0. Add this entry
+to `~/.codex/hooks.json`, which takes the same schema as Claude Code's
+`settings.json` `hooks` block:
 
 ```json
 {
@@ -269,17 +272,24 @@ audit_log          = "~/.local/state/igris/audit.jsonl"
 audit_excerpt      = false   # see "Audit log" below
 
 [stage2]
-enabled     = true
-base_url    = "https://api.openai.com/v1"
-model       = "deepseek-v4-pro"
-api_key_env = "IGRIS_STAGE2_KEY"   # the variable NAME, never the key itself
-timeout_ms  = 5000
+enabled      = true
+base_url     = "https://api.openai.com/v1"
+model        = "deepseek-v4-pro"
+api_key_env  = "IGRIS_STAGE2_KEY"  # the variable NAME, never the key itself
+api_key_file = ""                  # path to a key file; wins over api_key_env
+timeout_ms   = 5000                # per attempt, and classify() retries once
 
 [serve]
 listen         = "127.0.0.1:8787"
 upstream       = "https://api.anthropic.com"
 auth_token_env = ""          # empty = no client auth
 ```
+
+`api_key_file` exists for secret managers that decrypt to a file rather than an
+environment variable (agenix `/run/agenix/*`, systemd `LoadCredential`, Docker
+and Kubernetes secrets). It takes precedence over `api_key_env`, trailing
+whitespace is trimmed, and an unreadable file does *not* silently fall back to
+the environment.
 
 Endpoint overrides, for deployments that inject them at runtime:
 `IGRIS_STAGE2_BASE_URL`, `IGRIS_STAGE2_MODEL`, `IGRIS_SERVE_LISTEN`,
@@ -353,6 +363,117 @@ It reads the audit log and nothing else — it cannot change a verdict, a rule, 
 the config, and it shows only what the log already holds. With `audit_excerpt`
 off, that means hashes and rule ids, never the scanned text.
 
+## Current state
+
+A complete inventory of what the code in this repository does today, so the
+README can be read as a description rather than an intention. Version `0.1.0`.
+Every number below is re-measured by `just check` and by CI on each push.
+
+### Binary surface
+
+One binary, `igris`. Four subcommands, and deliberately nothing else.
+
+| Command | Input | Output | Fail mode |
+|---|---|---|---|
+| `igris scan [--trust user] [TEXT]` | argument, else stdin | one-line `Verdict` JSON | fail closed |
+| `igris hook` | one hook JSON object on stdin | hook-protocol JSON, always exit `0` | degrade to stage 1 |
+| `igris serve` | HTTP | reverse proxy plus `/scan`, `/health`, `/ready` | fail closed |
+| `igris console` | the audit log, read-only | full-screen terminal dashboard | n/a |
+
+Exit codes: `0` pass or warn, `2` block (`scan` only), `64` usage error or no
+TTY for the console, `70` guard-prompt hash mismatch, `78` config error. Every
+subcommand runs `verify_prompt()` before anything else, so a tampered guard
+prompt aborts the process regardless of which one you invoked.
+
+### The pipeline, end to end
+
+1. **Cap.** Input is truncated to `max_scan_bytes` on a character boundary.
+2. **Normalise.** Zero-width (`U+200B–200F`, `U+FEFF`), bidi
+   (`U+202A–202E`, `U+2066–2069`) and Unicode tag characters
+   (`U+E0000–E007F`) are detected on the *raw* text before any transform, then
+   the text is NFKC-normalised. Tag characters are `Certain`; zero-width and
+   bidi are `Ambiguous`, because ZWJ, ZWNJ and RLM have legitimate uses.
+3. **Decode.** Seven one-level-deep variants are produced and rescanned
+   alongside the original: base64 runs of ≥24 characters, ROT13, leetspeak,
+   percent-escapes, HTML entities, Cyrillic/Greek confusable folding, and an
+   invisible-character-stripped copy. Decoding is never recursive.
+4. **Match.** 45 rule ids — 25 `Certain` regexes, 18 `Ambiguous` regexes, and
+   two predicate rules that the `regex` crate cannot express as patterns
+   (`instr-act-as`, `MD-LINK-DATA-SCHEME`) — plus the three Unicode findings.
+   Hits are deduplicated by id across all variants, keeping the strongest
+   evidence.
+5. **Weigh.** A hit whose every occurrence sits inside a code fence or a quoted
+   span is a *mention*: `Certain` drops to `Ambiguous` at half weight, and it
+   stops counting toward breadth. Score = highest weight + 10 per additional
+   distinct unquoted hit, capped at 100.
+6. **Convict, or don't.** Stage 1 blocks only on `score >= block_threshold`
+   **and** decisive evidence — an unquoted `Certain` hit, or two unquoted
+   `Ambiguous` hits from different categories (authority / override / jailbreak
+   / action), which emits `combo-forged-system-turn` and floors the score at 85.
+7. **Excuse the operator.** `Trust::User` text that would block only on
+   override-category evidence, with no smuggling, is downgraded to a warning
+   carrying `operator-authored-downgrade`. This is final: it does not then
+   escalate, or a fail-closed adapter would reinstate the block.
+8. **Escalate.** With stage 2 enabled, anything still passing at
+   `score >= escalate_threshold` is sent to it, and comes back `Block`
+   (score ≥ 90, `Certain`), `Warn` (65), `Pass`, or `Failed`.
+9. **Never fall through.** A block-worthy score that nothing could adjudicate —
+   stage 2 disabled, unreachable, or non-conforming after one retry — is
+   resolved by the adapter's fail mode, tagged `unadjudicated-fail-close` or
+   `unadjudicated-degraded`. It is never a silent pass.
+10. **Audit.** Every non-pass verdict appends one JSONL line. Nothing else is
+    ever written.
+
+### Harness support
+
+| Harness | Mechanism | Status |
+|---|---|---|
+| Claude Code | `igris hook` on `PostToolUse` + `UserPromptSubmit` | verified end to end |
+| Codex | `igris hook`, identical payload and response contract | verified end to end against `codex-cli` 0.145.0 |
+| OpenCode | `integrations/opencode.js` → `POST /scan` on `igris serve` | verified end to end |
+| Anything else | `POST /scan`, or `igris scan` per item | — |
+
+`hook` scans `Read`, `WebFetch`, `Bash`, `WebSearch` and every `mcp__*` tool,
+skipping payloads under 20 bytes. Content extraction is per tool: `Read` and
+`WebFetch` take the response string or its `.content` (string, or array of
+`{text}` blocks), `Bash` takes `stdout` + `stderr`, and anything else has every
+string value in its response harvested, one per line.
+
+That last step matters more than it looks. Handing the scanner a *serialised*
+response instead of the text inside it puts every payload in double quotes,
+which the quoting rule correctly reads as a mention — Certain evidence demotes
+to Ambiguous at half weight, and a payload scoring 100 as raw text scores 45
+wrapped in `{"content":"…"}`, below `escalate_threshold`. Harvesting the string
+leaves gives the scanner the same bytes the model will read.
+
+### What is measured, and by what
+
+`just check` runs the first five gates below; CI runs those and additionally
+prints the detection report on every push, so the product's actual claim is
+re-measured rather than asserted:
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy --all-targets -- -D warnings` | clean |
+| `cargo test --all-targets` | 55 passing |
+| `node --test integrations/opencode.test.mjs` | passing |
+| `nix flake check --all-systems --no-build` | passing for x86_64-linux and aarch64-linux |
+| `cargo test --test corpus_report -- --nocapture` | 100% recall, 1.0% FP |
+
+The corpus is 155 malicious cases (138 injections, 10 Unicode smuggling, 7
+encoded) against 206 benign (56 ordinary, 150 deliberately hostile). The
+`corpus_test.rs` gate is absolute for the malicious sets and for the ordinary
+benign set, and a ≤2% rate for the hard benign set — driving that one to zero
+would mean over-fitting the ruleset to individual pages in the file.
+
+### Dependencies
+
+Twelve runtime crates: `regex`, `serde`, `serde_json`, `toml`,
+`unicode-normalization`, `sha2`, `base64`, `tokio`, `hyper`, `hyper-util`,
+`http-body-util`, and `reqwest` (rustls, no OpenSSL). The console adds none —
+it is raw ANSI, `std`, the already-present `serde_json`, and POSIX `stty`.
+
 ## Limits
 
 Read this part.
@@ -396,6 +517,10 @@ Read this part.
   earns the downgrade. This is a deliberate trade: quoting also weakens the
   payload against the target model, and a downgrade routes to stage 2 rather than
   skipping the check.
+- **A payload hidden in a JSON *key* evades the hook adapter.** Structured tool
+  responses are scanned by harvesting their string *values*; keys are treated as
+  field names the tool chose rather than as content. A server that smuggles
+  instructions into a key name would not be scanned.
 
 ## Development
 
