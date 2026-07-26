@@ -345,7 +345,9 @@ tail of events.
 $ igris console --config /etc/igris/config.toml
 ```
 
-`q` quit · `p` pause the tail · `/` filter · `s` cycle sort · `↑`/`↓` navigate.
+`q` quit · `p` pause the tail · `/` filter · `s` cycle sort · `↑`/`↓` navigate
+· `Enter` event details · `Esc` back · `←`/`→` switch full-width views on
+terminals below 40 rows.
 
 It reads the audit log and nothing else — it cannot change a verdict, a rule, or
 the config, and it shows only what the log already holds. With `audit_excerpt`

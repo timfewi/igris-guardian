@@ -32,9 +32,67 @@ fn engine() -> Engine {
     Engine::new(cfg)
 }
 
+const RESET: &str = "\x1b[0m";
+const RED: &str = "\x1b[38;2;255;82;82m";
+const ORANGE: &str = "\x1b[38;2;255;173;64m";
+const GREEN: &str = "\x1b[38;2;93;214;143m";
+const DIM: &str = "\x1b[38;2;154;164;178m";
+const BOLD: &str = "\x1b[1m";
+
+fn markdown_to_terminal(text: &str) -> String {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let line = line.trim_start_matches('#').trim_start();
+            let line = line.replace("**", "").replace('`', "");
+            Some(match line.strip_prefix("- ") {
+                Some(item) => format!("* {item}"),
+                None => line,
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn print_panel(title: &str, color: &str, entries: &[(String, Option<String>, u8, Vec<String>)]) {
+    println!(
+        "\n{color}+====================[ {title}: {} ]====================+{RESET}",
+        entries.len()
+    );
+    if entries.is_empty() {
+        println!("{color}|{RESET} {GREEN}CLEAR{RESET} {DIM}Nothing to review.{RESET}");
+        return;
+    }
+
+    for (index, (text, note, score, reasons)) in entries.iter().enumerate() {
+        println!(
+            "{color}|--[{}/{}]-------------------------------------------------{RESET}",
+            index + 1,
+            entries.len()
+        );
+        println!(
+            "{color}|{RESET} {BOLD}RISK {score:>3}/100{RESET}  {DIM}{}\n{RESET}",
+            reasons.join(", ")
+        );
+        for line in markdown_to_terminal(text).lines() {
+            println!("{color}|{RESET} {line}");
+        }
+        if let Some(note) = note {
+            println!("{color}|{RESET} {DIM}source: {note}{RESET}");
+        }
+    }
+    println!("{color}+--------------------------------------------------------------+{RESET}");
+}
+
 #[test]
 fn report() {
     let eng = engine();
+    println!(
+        "\n{RED}  ___ ___ ___ ___ ___{RESET}\n{RED} |_ _| __| _ \\_ _/ __|{RESET}\n{RED}  | || _||   /| |\\__ \\{RESET}\n{RED} |___|___|_|_\\___|___/{RESET}\n{DIM}             GUARDIAN CORPUS REPORT{RESET}"
+    );
     let mut malicious_missed = Vec::new();
     let mut malicious_total = 0usize;
 
@@ -62,21 +120,30 @@ fn report() {
         }
     }
 
-    println!("\n=== MISSED MALICIOUS ({}) ===", malicious_missed.len());
-    for (f, t, n, s, r) in &malicious_missed {
-        println!("  [{f}] score={s} {r:?}\n    text: {t}\n    note: {n:?}");
-    }
-    println!("\n=== BLOCKED BENIGN ({}) ===", benign_blocked.len());
-    for (t, n, s, r) in &benign_blocked {
-        println!("  score={s} {r:?}\n    text: {t}\n    note: {n:?}");
-    }
+    let missed_count = malicious_missed.len();
+    let missed = malicious_missed
+        .into_iter()
+        .map(|(file, text, note, score, reasons)| {
+            (text, note.map(|n| format!("{file} - {n}")), score, reasons)
+        })
+        .collect::<Vec<_>>();
+    print_panel("MISSED MALICIOUS", RED, &missed);
+    print_panel("BLOCKED BENIGN", ORANGE, &benign_blocked);
 
-    let caught = malicious_total - malicious_missed.len();
+    let caught = malicious_total - missed_count;
     let recall = 100.0 * caught as f64 / malicious_total as f64;
     let fp_rate = 100.0 * benign_blocked.len() as f64 / benign.len() as f64;
     println!(
-        "\n=== STAGE 1 (offline, no LLM) ===\n  recall:  {recall:.1}% ({caught}/{malicious_total} malicious blocked)\n  FP rate: {fp_rate:.1}% ({}/{} benign blocked)\n",
+        "\n{GREEN}+====================[ STAGE 1 - OFFLINE ]====================+{RESET}\n{GREEN}|{RESET} Recall       {BOLD}{recall:>5.1}%{RESET}  {DIM}({caught}/{malicious_total} malicious blocked){RESET}\n{GREEN}|{RESET} False positive {BOLD}{fp_rate:>4.1}%{RESET}  {DIM}({}/{} benign blocked){RESET}\n{GREEN}+---------------------------------------------------------------+{RESET}\n",
         benign_blocked.len(),
         benign.len()
+    );
+}
+
+#[test]
+fn markdown_is_rendered_as_terminal_text() {
+    assert_eq!(
+        markdown_to_terminal("# Threat Model\n\n## Assets\n- **System** `prompt`"),
+        "Threat Model\nAssets\n* System prompt"
     );
 }

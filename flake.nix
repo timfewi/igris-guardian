@@ -39,12 +39,33 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            cargo
-            rustc
-            clippy
-            rust-analyzer
+          packages = [
+            pkgs.cargo
+            pkgs.rustc
+            pkgs.rustfmt
+            pkgs.clippy
+            pkgs.rust-analyzer
+            pkgs.just
+            pkgs.direnv
           ];
+
+          CARGO_TERM_COLOR = "always";
+          RUST_BACKTRACE = "1";
+
+          shellHook = ''
+            if [ -t 2 ]; then
+              printf '\033[38;5;160m%s\n\033[0m' \
+                '   ⢰⡆' \
+                ' ⣀⡤⠸⠇⢤⣀' \
+                '⡞⠁⢀⢼⡧⡀⠈⢹' \
+                '⡇ ⣟⢯⡵⢻ ⢸' \
+                '⢇ ⠿⣏⢹⠿ ⡸' \
+                ' ⠑⢄⠹⠟⡠⠊' \
+                '   ⢹⡆' \
+                '   ⠈⠁' >&2
+              printf '\033[1m  I G R I S\033[0m  \033[2mguardian development shell\033[0m\n\n' >&2
+            fi
+          '';
         };
 
         checks.module = pkgs.runCommand "igris-module-${system}" {
