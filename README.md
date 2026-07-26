@@ -283,7 +283,19 @@ timeout_ms   = 5000                # per attempt, and classify() retries once
 listen         = "127.0.0.1:8787"
 upstream       = "https://api.anthropic.com"
 auth_token_env = ""          # empty = no client auth
+
+[hook]
+downgrade_paths = []         # e.g. ["/code/igris/", "/tests/corpus/"]
 ```
+
+`downgrade_paths` is for repositories that legitimately contain payloads — a
+detection ruleset, corpus fixtures, threat models, security docs. A `Read` from
+a matching path (substring, case-insensitive) that would block is downgraded to
+a warning instead, tagged `downgrade-path`. This is deliberately a *downgrade*,
+not an exemption: the scan still runs, the audit line is still written, and the
+warning still reaches the agent — a downgrade is visible where an exemption is
+invisible. It applies only to `Read` (the one tool with a reliable path) and
+only to the hook adapter; `scan` and `serve` are unaffected.
 
 `api_key_file` exists for secret managers that decrypt to a file rather than an
 environment variable (agenix `/run/agenix/*`, systemd `LoadCredential`, Docker
