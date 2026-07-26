@@ -378,8 +378,8 @@ off, that means hashes and rule ids, never the scanned text.
 ## Current state
 
 A complete inventory of what the code in this repository does today, so the
-README can be read as a description rather than an intention. Version `0.1.0`.
-Every number below is re-measured by `just check` and by CI on each push.
+README can be read as a description rather than an intention. Every number
+below is re-measured by `just check` and by CI on each push.
 
 ### Binary surface
 

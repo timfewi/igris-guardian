@@ -87,6 +87,10 @@ section of the README before trying to convict on them at the regex layer.
 ## Pull requests
 
 - Branch off `main`, one logical change per PR.
+- **Versioning is automatic.** Every merge to `main` bumps the patch version by
+  one via CI (`.github/workflows/bump.yml`) — do not bump it in your PR. Minor
+  and major bumps are deliberate maintainer releases, landed as a PR whose
+  squash title starts with `release:`, which CI leaves untouched.
 - Explain what an attacker or user does differently because of this change.
 - Tests for anything that isn't a typo fix.
 - If you changed detection behaviour, paste the before/after corpus numbers.

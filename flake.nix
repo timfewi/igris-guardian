@@ -33,7 +33,9 @@
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "igris-guardian";
-          version = "0.1.0";
+          # Single source of truth: CI bumps the patch version in Cargo.toml on
+          # every merge to main, and a literal here would silently drift.
+          version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
         };
