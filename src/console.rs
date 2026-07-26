@@ -1183,7 +1183,7 @@ fn frame(
     let w = cols.min(160);
     if cols < MIN_COLS || rows < MIN_ROWS {
         return format!(
-            "\x1b[H\x1b[2J{C_DIM}igris console needs at least {MIN_COLS}x{MIN_ROWS}{RESET}\r\n"
+            "\x1b[?2026h\x1b[H{C_DIM}igris console needs at least {MIN_COLS}x{MIN_ROWS}{RESET}\x1b[J\x1b[?2026l"
         );
     }
 
@@ -1293,8 +1293,19 @@ fn frame(
     // free: every line must end \r\n or the frame walks off to the right. The
     // separator goes *between* lines, never after the last one — a newline on
     // the bottom row scrolls the whole frame up by one.
-    let body: Vec<String> = out.iter().map(|l| clip(l, w)).collect();
-    format!("\x1b[H\x1b[2J{}", body.join("\r\n"))
+    //
+    // No \x1b[2J. Clearing blanks the screen and the frame paints on top, and
+    // that blank-then-paint gap is what reads as flicker at 4 Hz. Overwrite in
+    // place instead: home the cursor, erase each line's tail with \x1b[K, erase
+    // below the frame with \x1b[J. The synchronized-update marks (?2026) let
+    // terminals that support them (kitty, alacritty, wezterm, foot) commit the
+    // whole frame atomically; the rest ignore the private mode and still get
+    // the no-blank overwrite.
+    let body: Vec<String> = out
+        .iter()
+        .map(|l| format!("{}\x1b[K", clip(l, w)))
+        .collect();
+    format!("\x1b[?2026h\x1b[H{}\x1b[J\x1b[?2026l", body.join("\r\n"))
 }
 
 // ── run loop ────────────────────────────────────────────────────────────────
@@ -1335,6 +1346,7 @@ pub fn run(cfg: Config) -> i32 {
     let start = Instant::now();
     let mut paused = false;
     let mut view = View::default();
+    let mut last_frame = String::new();
 
     loop {
         let (rows, cols) = term_size();
@@ -1415,11 +1427,17 @@ pub fn run(cfg: Config) -> i32 {
         }
 
         let text = frame(rows, cols, &cfg, &recs, start.elapsed(), paused, &mut view);
-        // One write per frame: partial frames are what tearing looks like.
-        let mut out = std::io::stdout().lock();
-        let _ = out.write_all(text.as_bytes());
-        let _ = out.flush();
-        drop(out);
+        // One write per frame: partial frames are what tearing looks like. An
+        // unchanged frame is skipped entirely — at idle only the LIVE dot
+        // blinks (2 Hz), so half the 4 Hz ticks produce byte-identical output
+        // and a repaint would buy nothing but shimmer.
+        if text != last_frame {
+            let mut out = std::io::stdout().lock();
+            let _ = out.write_all(text.as_bytes());
+            let _ = out.flush();
+            drop(out);
+            last_frame = text;
+        }
 
         std::thread::sleep(TICK);
     }
@@ -1730,5 +1748,47 @@ mod tests {
         assert_eq!(vis_len(&s), 6);
         assert_eq!(vis_len(&clip(&s, 3)), 3);
         assert_eq!(vis_len(&pad("ab", 5)), 5);
+    }
+
+    /// The frame must never clear the screen: \x1b[2J blanks everything and the
+    /// repaint lands on top, which is exactly what flickers at 4 Hz. The
+    /// contract is overwrite-in-place — erase-to-EOL per line, erase-below at
+    /// the end — inside synchronized-update marks.
+    #[test]
+    fn frame_overwrites_in_place_instead_of_clearing() {
+        for (rows, cols) in [(MIN_ROWS, 100), (50, 120), (10, 40)] {
+            let rendered = frame(
+                rows,
+                cols,
+                &Config::default(),
+                &[rec("warn", 30, false, "ambiguous", &["r"])],
+                Duration::ZERO,
+                false,
+                &mut View::default(),
+            );
+            assert!(
+                !rendered.contains("\x1b[2J"),
+                "{rows}x{cols}: full-screen clear is the flicker"
+            );
+            assert!(rendered.starts_with("\x1b[?2026h\x1b[H"));
+            assert!(rendered.ends_with("\x1b[J\x1b[?2026l"));
+        }
+
+        // Every line erases its own tail, so a shorter line cannot leave the
+        // previous frame's residue behind it.
+        let rendered = frame(
+            MIN_ROWS,
+            100,
+            &Config::default(),
+            &[],
+            Duration::ZERO,
+            false,
+            &mut View::default(),
+        );
+        assert!(rendered
+            .trim_start_matches("\x1b[?2026h\x1b[H")
+            .trim_end_matches("\x1b[J\x1b[?2026l")
+            .split("\r\n")
+            .all(|line| line.ends_with("\x1b[K")));
     }
 }
