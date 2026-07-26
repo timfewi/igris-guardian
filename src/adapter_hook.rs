@@ -114,16 +114,20 @@ async fn handle_post_tool_use(engine: &Engine, data: &Value) -> i32 {
         .scan(&content, &source, FailMode::DegradeStage1)
         .await;
 
-    // Excluded paths (Read only, mirrors gsd-read-injection-scanner.js): downgrade, never skip.
+    // Excluded paths (Read only): downgrade, never skip. Two sources — the
+    // hardcoded list mirroring gsd-read-injection-scanner.js, and the operator's
+    // own `[hook] downgrade_paths` for repos that legitimately contain payloads
+    // (a detection ruleset, corpus fixtures, threat models). Both share one
+    // ceiling: Block becomes Warn, the audit line is already written, and the
+    // warning still reaches the agent.
     if tool_name == "Read" && verdict.action == Action::Block {
         if let Some(fp) = tool_input.get("file_path").and_then(|v| v.as_str()) {
-            if is_excluded_path(fp) {
-                verdict = Verdict::new(
-                    verdict.score,
-                    Action::Warn,
-                    verdict.confidence,
-                    verdict.reasons,
-                );
+            if is_excluded_path(fp)
+                || matches_downgrade_path(&engine.config().hook.downgrade_paths, fp)
+            {
+                let mut reasons = verdict.reasons;
+                reasons.push("downgrade-path".to_string());
+                verdict = Verdict::new(verdict.score, Action::Warn, verdict.confidence, reasons);
             }
         }
     }
@@ -265,6 +269,19 @@ fn truncate(s: &str, max: usize) -> String {
         end -= 1;
     }
     format!("{}...", &s[..end])
+}
+
+/// Config-driven counterpart of [`is_excluded_path`]: same substring semantics
+/// (backslashes normalized, case-insensitive), same Block -> Warn ceiling.
+///
+/// Empty patterns are skipped — "" is a substring of every path, and one blank
+/// line in a config file must not silently downgrade the whole filesystem.
+fn matches_downgrade_path(patterns: &[String], file_path: &str) -> bool {
+    let p = file_path.replace('\\', "/").to_lowercase();
+    patterns.iter().any(|pat| {
+        let pat = pat.replace('\\', "/").to_lowercase();
+        !pat.is_empty() && p.contains(&pat)
+    })
 }
 
 /// Port of `isExcludedPath` from gsd-read-injection-scanner.js. Deliberately a

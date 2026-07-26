@@ -9,6 +9,16 @@ false-positive rate are the product's actual claim.
 
 ## [Unreleased]
 
+### Added
+
+- `[hook] downgrade_paths`: config-driven Block -> Warn downgrade for `Read`
+  paths that legitimately contain payloads (detection rulesets, corpus
+  fixtures, threat models). Same ceiling as the built-in exclusions — the scan
+  still runs, the audit line is still written, the warning still reaches the
+  agent, and there is still no way to skip scanning a path entirely. Downgraded
+  verdicts carry a `downgrade-path` reason so the console and audit log show
+  why a block became a warning.
+
 ### Fixed
 
 - `hook` no longer hands the scanner a serialised `tool_response`. Tools without

@@ -27,6 +27,7 @@ pub struct Config {
     pub audit_excerpt: bool,
     pub stage2: Stage2Config,
     pub serve: ServeConfig,
+    pub hook: HookConfig,
 }
 
 impl Default for Config {
@@ -39,8 +40,22 @@ impl Default for Config {
             audit_excerpt: false,
             stage2: Stage2Config::default(),
             serve: ServeConfig::default(),
+            hook: HookConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct HookConfig {
+    /// Substrings of `Read` file paths whose Block verdicts downgrade to Warn.
+    ///
+    /// For repositories that legitimately contain payloads — this project's own
+    /// source, corpus fixtures, threat models. This is a *downgrade*, not an
+    /// exemption: the scan still runs, the audit line is still written, and the
+    /// warning still reaches the agent. There is deliberately no way to skip
+    /// scanning a path entirely.
+    pub downgrade_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
