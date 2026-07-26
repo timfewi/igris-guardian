@@ -898,6 +898,7 @@ fn demote_if_quoted(hit: Hit, re: &Regex, text: &str) -> Hit {
 const FEELER_MAX_BYTES: usize = 400;
 
 pub const FEELER_CRED_NOUN: &str = "feeler-cred-noun";
+pub const FEELER_OVERRIDE: &str = "feeler-override";
 
 static CRED_NOUN_RE: OnceLock<Regex> = OnceLock::new();
 
@@ -924,6 +925,8 @@ fn cred_noun_re() -> &'static Regex {
 /// the same bargain the guard prompt makes with its compiled-in hash.
 const CRED_NOUNS_TXT: &str = include_str!("../data/cred_nouns.txt");
 const CONFUSABLES_TXT: &str = include_str!("../data/confusables.txt");
+const OVERRIDE_VERBS_TXT: &str = include_str!("../data/override_verbs.txt");
+const OVERRIDE_SCOPES_TXT: &str = include_str!("../data/override_scopes.txt");
 
 /// Words long enough that one edit away is still unambiguously the same word.
 /// Below this, innocent neighbours appear — `passwd` is one edit from `passed`
@@ -937,14 +940,45 @@ fn parse_lines(raw: &str) -> impl Iterator<Item = &str> {
 }
 
 static CRED_NOUNS: OnceLock<Vec<String>> = OnceLock::new();
+static OVERRIDE_VERBS: OnceLock<Vec<String>> = OnceLock::new();
+static OVERRIDE_SCOPES: OnceLock<Vec<String>> = OnceLock::new();
 
-/// Every noun from the data file, pre-folded so lookups compare skeletons only.
+/// Every word from a data file, pre-folded so lookups compare skeletons only.
+fn word_list(cell: &'static OnceLock<Vec<String>>, raw: &'static str) -> &'static Vec<String> {
+    cell.get_or_init(|| parse_lines(raw).map(confusable_skeleton).collect())
+}
+
 fn cred_nouns() -> &'static Vec<String> {
-    CRED_NOUNS.get_or_init(|| {
-        parse_lines(CRED_NOUNS_TXT)
-            .map(confusable_skeleton)
-            .collect()
+    word_list(&CRED_NOUNS, CRED_NOUNS_TXT)
+}
+
+fn override_verbs() -> &'static Vec<String> {
+    word_list(&OVERRIDE_VERBS, OVERRIDE_VERBS_TXT)
+}
+
+fn override_scopes() -> &'static Vec<String> {
+    word_list(&OVERRIDE_SCOPES, OVERRIDE_SCOPES_TXT)
+}
+
+/// Does this already-folded word match a list entry? Long entries tolerate one
+/// edit; short ones must match exactly, since they have innocent neighbours.
+fn matches_list(word: &str, list: &[String]) -> bool {
+    list.iter().any(|entry| {
+        if entry.len() >= FUZZY_MIN_LEN {
+            within_one_edit(word, entry)
+        } else {
+            word == entry
+        }
     })
+}
+
+/// Split into folded word-skeletons, order preserved so proximity can be read.
+fn skeleton_tokens(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .flat_map(|w| w.split(['"', '\'', ',', ';', ':', '(', ')', '[', ']']))
+        .map(confusable_skeleton)
+        .filter(|w| !w.is_empty())
+        .collect()
 }
 
 static CONFUSABLES: OnceLock<std::collections::HashMap<char, char>> = OnceLock::new();
@@ -1033,19 +1067,38 @@ fn confusable_skeleton(token: &str) -> String {
 /// Splitting on whitespace rather than on non-alphanumerics matters: `p@ssword`
 /// would otherwise split into two fragments and never be compared as a word.
 fn has_near_cred_noun(text: &str) -> bool {
-    text.split_whitespace()
-        .flat_map(|w| w.split(['"', '\'', ',', ';', ':', '(', ')', '[', ']']))
-        .map(confusable_skeleton)
-        .filter(|w| !w.is_empty())
-        .any(|word| {
-            cred_nouns().iter().any(|noun| {
-                if noun.len() >= FUZZY_MIN_LEN {
-                    within_one_edit(&word, noun)
-                } else {
-                    word == *noun
-                }
-            })
-        })
+    skeleton_tokens(text)
+        .iter()
+        .any(|word| matches_list(word, cred_nouns()))
+}
+
+/// How far after the verb a scope word still counts as its object. Four covers
+/// "ignore everything", "forget what you were told" and "disregard all of the
+/// previous" without letting a verb reach across a sentence boundary to borrow
+/// an unrelated "you".
+const OVERRIDE_SCOPE_WINDOW: usize = 4;
+
+/// An override verb aimed at something worth overriding.
+///
+/// The verb alone is worthless as a signal — "ignore the deprecation warning"
+/// is every codebase on earth, and measuring it showed an override verb in 30%
+/// of short hard-benign text. What separates the payload is the *object*: a
+/// totalising word, a backward-looking one, or the agent itself. Requiring both,
+/// within a few words, is what makes this affordable.
+///
+/// Both halves are matched as folded skeletons, so `1gn0re` and `disregrd` count
+/// and `forget wat u were told b4` matches without `wat`, `u` or `b4` needing to
+/// be spelled the way a dictionary would.
+fn has_override_demand(text: &str) -> bool {
+    let tokens = skeleton_tokens(text);
+    tokens.iter().enumerate().any(|(i, word)| {
+        matches_list(word, override_verbs())
+            && tokens
+                .iter()
+                .skip(i + 1)
+                .take(OVERRIDE_SCOPE_WINDOW)
+                .any(|scope| matches_list(scope, override_scopes()))
+    })
 }
 
 /// Signals that do not identify an attack, only a reason to ask about one.
@@ -1072,15 +1125,20 @@ pub fn feeler_hits(text: &str, escalate_at: u8) -> Vec<Hit> {
     if text.len() > FEELER_MAX_BYTES {
         return Vec::new();
     }
-    if !cred_noun_re().is_match(text) && !has_near_cred_noun(text) {
-        return Vec::new();
-    }
-    vec![Hit {
-        id: FEELER_CRED_NOUN,
+    let feeler = |id| Hit {
+        id,
         weight: escalate_at,
         tier: Tier::Ambiguous,
         quoted: false,
-    }]
+    };
+    let mut out = Vec::new();
+    if cred_noun_re().is_match(text) || has_near_cred_noun(text) {
+        out.push(feeler(FEELER_CRED_NOUN));
+    }
+    if has_override_demand(text) {
+        out.push(feeler(FEELER_OVERRIDE));
+    }
+    out
 }
 
 #[cfg(test)]

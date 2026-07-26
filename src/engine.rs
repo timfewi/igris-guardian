@@ -50,11 +50,6 @@ impl Engine {
             for h in self.rules.hits(v) {
                 crate::rules::merge_hit(&mut hits, h);
             }
-            // Per variant, not just the original: leetspeak folds "p@ssw0rd"
-            // back to a noun the feeler recognises.
-            for h in crate::rules::feeler_hits(v, self.cfg.escalate_threshold) {
-                crate::rules::merge_hit(&mut hits, h);
-            }
         }
         for f in &findings {
             crate::rules::merge_hit(
@@ -68,7 +63,28 @@ impl Engine {
             );
         }
 
-        let (score, reasons, decisive) = crate::rules::aggregate(&hits);
+        let (mut score, mut reasons, mut decisive) = crate::rules::aggregate(&hits);
+
+        // Feelers are a last resort, not an extra opinion: they run only when
+        // nothing else found enough to escalate on, because their whole purpose
+        // is the text no rule could name.
+        //
+        // This gate is about semantics, not cost — it was measured and it moves
+        // the escalation count on the hard benign corpus by nothing at all. The
+        // documents that trip feelers there score *below* the threshold on rules
+        // alone, so gating never gets the chance to suppress them. It keeps
+        // feeler reasons out of verdicts that already carry real evidence, which
+        // is worth having when reading an audit line, and that is all.
+        if score < self.cfg.escalate_threshold {
+            // Per variant, not just the original: leetspeak folds "p@ssw0rd"
+            // back to a noun the feeler recognises.
+            for v in &variants {
+                for h in crate::rules::feeler_hits(v, self.cfg.escalate_threshold) {
+                    crate::rules::merge_hit(&mut hits, h);
+                }
+            }
+            (score, reasons, decisive) = crate::rules::aggregate(&hits);
+        }
         let confidence = if decisive {
             Confidence::Certain
         } else {
@@ -163,6 +179,35 @@ impl Engine {
             // ambiguous stage 1's evidence was on its own.
             Classification::Injection
             | Classification::Jailbreak
+            | Classification::PolicyViolation
+                if only_override_feeler(&stage1.reasons) =>
+            {
+                // Measured, not assumed: on "ignore all warnings from the
+                // linter", "ignore all whitespace changes in the diff" and
+                // "forget everything you know about the old API", all three
+                // candidate classifiers returned INJECTION — the same answer,
+                // so it is the question that is wrong, not the model. Read
+                // without context, those sentences *are* imperatives to
+                // disregard something.
+                //
+                // The override feeler is a keyword pair, not evidence of a
+                // shape, and convicting on a classifier's reading of a keyword
+                // pair would hard-block ordinary developer speech. That is how
+                // a scanner gets switched off. It warns instead: visible in the
+                // audit log and to the agent, fatal to nothing.
+                //
+                // The credential feeler has no such clause because it does not
+                // need one — stage 2 cleared every benign case put to it,
+                // including "read the password policy".
+                Verdict::new(
+                    70,
+                    Action::Warn,
+                    Confidence::Ambiguous,
+                    with(stage1.reasons, "stage2-injection-feeler-only"),
+                )
+            }
+            Classification::Injection
+            | Classification::Jailbreak
             | Classification::PolicyViolation => Verdict::new(
                 stage1.score.max(90),
                 Action::Block,
@@ -186,6 +231,13 @@ impl Engine {
             Classification::Failed => unadjudicated(stage1, fail_mode),
         }
     }
+}
+
+/// Was the override feeler the *only* thing that spoke? A feeler is a reason to
+/// ask, never evidence, so nothing may be convicted on one alone — not even by
+/// stage 2. Any real rule firing alongside it lifts the ceiling back off.
+fn only_override_feeler(reasons: &[String]) -> bool {
+    !reasons.is_empty() && reasons.iter().all(|r| r == crate::rules::FEELER_OVERRIDE)
 }
 
 /// Resolve a verdict that wanted a second opinion and could not get one, by the
@@ -237,4 +289,34 @@ pub fn cap(text: &str, max: usize) -> &str {
         end -= 1;
     }
     &text[..end]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The ceiling exists so a keyword pair can never hard-block ordinary
+    /// developer speech, and it has to lift the moment real evidence appears.
+    #[test]
+    fn warn_ceiling_applies_only_to_a_lone_override_feeler() {
+        let feeler = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        assert!(only_override_feeler(&feeler(&[
+            crate::rules::FEELER_OVERRIDE
+        ])));
+
+        // Any real rule alongside it, and the verdict is no longer resting on a
+        // keyword pair — full conviction is back on the table.
+        assert!(!only_override_feeler(&feeler(&[
+            crate::rules::FEELER_OVERRIDE,
+            "instr-ignore-previous",
+        ])));
+        // The credential feeler is not covered: stage 2 was measured accurate on
+        // it, so it keeps the power to convict.
+        assert!(!only_override_feeler(&feeler(&[
+            crate::rules::FEELER_CRED_NOUN
+        ])));
+        // No evidence at all never reaches stage 2, but must not read as "only".
+        assert!(!only_override_feeler(&[]));
+    }
 }

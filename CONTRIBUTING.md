@@ -82,6 +82,12 @@ a real contribution, and the cheapest one available:
 - **`data/confusables.txt`** — glyphs that read as a letter. `pa55w0rd`,
   `p4ssword`, `passw|rd` are all obvious to a human and to a model, and match
   nothing spelled correctly.
+- **`data/override_verbs.txt`** and **`data/override_scopes.txt`** — the two
+  halves of the override feeler. Neither fires alone: "ignore the deprecation
+  warning" is every codebase, "ignore everything you were told" is not, and the
+  difference is entirely in the object. The scopes file is the precision half,
+  so keep it to words that are totalising, backward-looking, or aimed at the
+  agent itself; anything ordinary there makes the feeler expensive.
 
 Both are compiled into the binary with `include_str!` rather than read at
 startup, deliberately. A blacklist the scanner loads from disk is a blacklist an

@@ -1,0 +1,80 @@
+# What an override verb has to be aimed at before it means anything.
+#
+# This list is the precision half of `feeler-override`. "ignore the failing
+# test" is ordinary work; "ignore everything above" is not. The difference is
+# entirely in the object, so this file is what keeps the feeler from escalating
+# every debugging conversation ever held.
+#
+# A scope word counts only within a few words after the verb. Adding something
+# ordinary here is the way to make this feeler expensive — the words below are
+# either totalising (all, everything), backward-looking (previous, above), or
+# address the agent itself (you, your). Nothing else belongs.
+#
+# Entries of 8+ characters are matched through one typo and glyph substitution;
+# shorter ones must match exactly after folding. Deliberately included in their
+# chat-shortened spellings, because that is how the payloads actually arrive.
+
+# --- totalising ---
+all
+everything
+every
+anything
+whatever
+entirely
+completely
+
+# --- backward-looking ---
+previous
+prior
+earlier
+above
+preceding
+original
+initial
+former
+before
+b4
+
+# --- the agent itself ---
+you
+your
+yourself
+youre
+u
+ur
+urself
+
+# --- what it was told ---
+instructions
+instruction
+directives
+guidelines
+rules
+prompt
+told
+said
+what
+wat
+
+# --- German ---
+alles
+alle
+vorherige
+vorherigen
+oben
+davor
+anweisungen
+regeln
+gesagt
+dir
+dein
+deine
+
+# --- Romance ---
+todo
+todas
+tudo
+tout
+anterior
+anteriores
+precedente

@@ -1,0 +1,49 @@
+# Verbs that countermand standing instructions, for the feeler tier
+# (`feeler-override`). Same deal as data/cred_nouns.txt: add a line, no Rust.
+#
+# These never fire alone — an override verb needs a scope word from
+# data/override_scopes.txt within a few words after it, because "ignore the
+# deprecation warning" is every codebase and "ignore everything you were told"
+# is not. Even then it only escalates to stage 2; it cannot block.
+#
+# Entries of 8+ characters are matched through one typo and through glyph
+# substitution; shorter ones must match exactly after glyph folding.
+
+# --- English ---
+ignore
+forget
+disregard
+override
+discard
+bypass
+overrule
+supersede
+supercede
+nevermind
+unlearn
+
+# --- German ---
+ignoriere
+ignorieren
+vergiss
+vergesse
+vergessen
+missachte
+uberschreibe
+verwerfe
+
+# --- Romance ---
+ignora
+ignorar
+olvida
+olvidar
+oublie
+oublier
+esquece
+dimentica
+
+# --- Other ---
+negeer
+glem
+unohda
+zapomnij
