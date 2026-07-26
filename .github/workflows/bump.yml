@@ -1,10 +1,19 @@
 # Every merge to main bumps the patch version in Cargo.toml (and its Cargo.lock
-# entry) by one, committed back as `release: vX.Y.Z`.
+# entry) by one, landed as a `release: vX.Y.Z` pull request that merges itself.
+#
+# It goes through a PR because main's ruleset requires one, and the bot is not
+# in the bypass list (only the admin role is). Granting it a bypass would have
+# been the shorter fix and the wrong one: "every change to main goes through a
+# PR" stops being a property the moment something is exempt from it, and this
+# repository is in no position to argue that exemptions are fine when invisible.
+# The PR needs no approval (the ruleset asks for zero), so nothing waits on a
+# human — it just leaves a reviewable trail where a force-push would not.
 #
 # Loop safety, twice over: pushes made with GITHUB_TOKEN do not trigger
-# workflows, and the `release:` prefix is skipped explicitly. The same prefix is
-# the manual escape hatch — a deliberate minor/major bump lands as a PR whose
-# squash title starts with `release:`, and CI keeps its hands off it.
+# workflows, and the `release:` prefix is skipped explicitly. The squash title
+# is the PR title, so the merge lands on main already carrying that prefix. The
+# same prefix is the manual escape hatch — a deliberate minor/major bump lands
+# as a PR whose squash title starts with `release:`, and CI keeps its hands off.
 name: Bump patch
 
 on:
@@ -13,6 +22,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   bump:
@@ -22,12 +32,28 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Bump patch version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           old=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
           new="${old%.*}.$(( ${old##*.} + 1 ))"
+          branch="release/v$new"
           sed -i "0,/^version = \"$old\"$/s//version = \"$new\"/" Cargo.toml
           cargo update --workspace
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "release: v$new"
-          git push
+          git switch -c "$branch"
+          # -s because the DCO check rejects unsigned commits, bot or not.
+          git commit -asm "release: v$new"
+          # Force, so a re-run after a failed merge updates the branch in place
+          # rather than dying on a stale one.
+          git push -fu origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "release: v$new" \
+            --body "Automatic patch bump: \`$old\` -> \`$new\`. Opened by \`bump.yml\`." \
+            || echo "PR already open for $branch, reusing it"
+          # --auto waits for checks; it needs the repo's auto-merge setting, so
+          # fall back to a plain merge rather than stranding an open release PR.
+          gh pr merge "$branch" --squash --auto --delete-branch \
+            || gh pr merge "$branch" --squash --delete-branch
