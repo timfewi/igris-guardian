@@ -239,7 +239,7 @@ $ curl -s localhost:8787/scan -d '{"text": "check this", "source": "rag-doc-42"}
 {"safe":true,"score":0,"action":"pass","confidence":"ambiguous","reasons":[]}
 
 $ curl -s localhost:8787/health
-{"status":"ok","version":"0.1.0"}
+{"status":"ok","version":"0.1.1"}
 
 $ curl -s localhost:8787/ready
 {"status":"ready","checks":{"audit_log":{"ready":true},"auth":{"enabled":false,"ready":true},"stage2":{"enabled":true}}}
@@ -429,7 +429,7 @@ prompt aborts the process regardless of which one you invoked.
    alongside the original: base64 runs of ≥24 characters, ROT13, leetspeak,
    percent-escapes, HTML entities, Cyrillic/Greek confusable folding, and an
    invisible-character-stripped copy. Decoding is never recursive.
-4. **Match.** 45 rule ids — 25 `Certain` regexes, 18 `Ambiguous` regexes, and
+4. **Match.** 46 rule ids — 25 `Certain` regexes, 19 `Ambiguous` regexes, and
    two predicate rules that the `regex` crate cannot express as patterns
    (`instr-act-as`, `MD-LINK-DATA-SCHEME`) — plus the three Unicode findings.
    Hits are deduplicated by id across all variants, keeping the strongest
@@ -488,7 +488,7 @@ re-measured rather than asserted:
 |---|---|
 | `cargo fmt --check` | clean |
 | `cargo clippy --all-targets -- -D warnings` | clean |
-| `cargo test --all-targets` | 55 passing |
+| `cargo test --all-targets` | 59 passing |
 | `node --test integrations/opencode.test.mjs` | passing |
 | `nix flake check --all-systems --no-build` | passing for x86_64-linux and aarch64-linux |
 | `cargo test --test corpus_report -- --nocapture` | 100% recall, 1.0% FP |
