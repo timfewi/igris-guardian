@@ -278,6 +278,8 @@ model        = "deepseek-v4-pro"
 api_key_env  = "IGRIS_STAGE2_KEY"  # the variable NAME, never the key itself
 api_key_file = ""                  # path to a key file; wins over api_key_env
 timeout_ms   = 5000                # per attempt, and classify() retries once
+zdr_only         = false           # OpenRouter: refuse non-ZDR providers
+reasoning_effort = ""              # "low"/"medium"/"high"; empty = not sent
 
 [serve]
 listen         = "127.0.0.1:8787"
@@ -296,6 +298,24 @@ not an exemption: the scan still runs, the audit line is still written, and the
 warning still reaches the agent — a downgrade is visible where an exemption is
 invisible. It applies only to `Read` (the one tool with a reliable path) and
 only to the hook adapter; `scan` and `serve` are unaffected.
+
+`zdr_only` sends OpenRouter's `provider: {"zdr": true}` routing preference, which
+restricts the request to Zero-Data-Retention endpoints — providers that store
+nothing, and therefore cannot train on it either. Worth setting for any content
+you would not paste into a third-party chat window, because the scanner sees
+command output, file contents and request bodies. Routing that would have landed
+on a retaining provider becomes an upstream error, and the adapter's fail mode
+takes over from there — a visible failure rather than a silent leak. Account-wide
+enforcement in OpenRouter's privacy settings is the stronger control; this flag
+is the per-request belt to that pair of braces. It is OpenRouter-specific: leave
+it `false` for other OpenAI-compatible endpoints, which may reject the unknown
+field. ZDR governs retention, not transfer — text still leaves the machine.
+
+`reasoning_effort` matters for reasoning-capable classifiers. A stage-2 verdict is
+a ~30-token JSON object, so nothing about this workload benefits from extended
+deliberation, while the latency lands squarely in the hook's timeout budget.
+Empty (the default) sends no field at all, which is what non-reasoning endpoints
+expect.
 
 `api_key_file` exists for secret managers that decrypt to a file rather than an
 environment variable (agenix `/run/agenix/*`, systemd `LoadCredential`, Docker
@@ -541,7 +561,19 @@ $ nix develop          # or bring your own cargo
 $ cargo test
 $ cargo test --test corpus_report -- --nocapture   # detection numbers
 $ cargo clippy --all-targets -- -D warnings
+$ scripts/eval_stage2.py --dry-run                 # stage-1 partition, offline
+$ scripts/eval_stage2.py -m <model> -m <model>     # compare classifiers
 ```
+
+`eval_stage2.py` compares stage-2 candidates on the corpora by driving the real
+binary, so the guard prompt and parse behaviour under test are the shipped ones
+and the API key stays wherever the config put it. It reports, per model, the
+verdict accuracy on cases that actually escalate and the p50/p95 latency. Its
+third phase asks the classifier directly, bypassing stage 1 — the only way to
+measure a model on text stage 1 scores at 0, which never escalates and so cannot
+be reached through the product path. `--dry-run` stops after the offline phase
+and lists exactly those cases: attacks stage 1 cannot see, and therefore neither
+can stage 2.
 
 Corpus files live in `tests/corpus/*.jsonl` as `{"text": "...", "note": "..."}`.
 Adding cases is the most useful contribution there is: a benign case that
