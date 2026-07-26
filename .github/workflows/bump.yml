@@ -1,0 +1,33 @@
+# Every merge to main bumps the patch version in Cargo.toml (and its Cargo.lock
+# entry) by one, committed back as `release: vX.Y.Z`.
+#
+# Loop safety, twice over: pushes made with GITHUB_TOKEN do not trigger
+# workflows, and the `release:` prefix is skipped explicitly. The same prefix is
+# the manual escape hatch — a deliberate minor/major bump lands as a PR whose
+# squash title starts with `release:`, and CI keeps its hands off it.
+name: Bump patch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    if: "!startsWith(github.event.head_commit.message, 'release:')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bump patch version
+        run: |
+          old=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          new="${old%.*}.$(( ${old##*.} + 1 ))"
+          sed -i "0,/^version = \"$old\"$/s//version = \"$new\"/" Cargo.toml
+          cargo update --workspace
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "release: v$new"
+          git push

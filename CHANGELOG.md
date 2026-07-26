@@ -9,6 +9,12 @@ false-positive rate are the product's actual claim.
 
 ## [Unreleased]
 
+Patch versions bump automatically on every merge to `main` (see
+`.github/workflows/bump.yml`); entries below accumulate here until a release
+section is cut.
+
+## [0.1.1] - 2026-07-26
+
 ### Added
 
 - `[hook] downgrade_paths`: config-driven Block -> Warn downgrade for `Read`
@@ -53,4 +59,5 @@ false positives (2/206 benign).
   `CODE_OF_CONDUCT.md`, issue and pull request templates, Dependabot.
 
 [Unreleased]: https://github.com/timfewi/igris-guardian/commits/main
+[0.1.1]: https://github.com/timfewi/igris-guardian/compare/v0.1.0...main
 [0.1.0]: https://github.com/timfewi/igris-guardian/releases/tag/v0.1.0
