@@ -37,6 +37,10 @@ report:
 build:
     cargo build --release
 
+# Build and install the release binary to ~/.local/bin, where agent hooks run it.
+install: build
+    install -Dm755 target/release/igris ~/.local/bin/igris
+
 # Open the live audit Console with default configuration.
 console:
     cargo run -- console
