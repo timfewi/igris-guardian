@@ -9,6 +9,20 @@ false-positive rate are the product's actual claim.
 
 ## [Unreleased]
 
+### Fixed
+
+- `hook` no longer hands the scanner a serialised `tool_response`. Tools without
+  a per-tool extractor — `WebSearch`, every `mcp__*` tool, and `Read`/`WebFetch`
+  responses whose text sits outside `.content` — had every payload string
+  wrapped in JSON double quotes, which the quoting rule correctly read as a
+  mention: Certain evidence demoted to Ambiguous at half weight, dropping a
+  score of 100 to 45. That is below `escalate_threshold`, so such payloads
+  passed with no block, no warning and no stage-2 escalation. The adapter now
+  harvests the string values out of structured responses. Corpus numbers are
+  unchanged (100% recall, 1.0% false positives) — the corpus exercises the
+  engine directly, so it never covered this adapter path; three regression tests
+  in `tests/it_hook.rs` now do.
+
 ## [0.1.0] - 2026-07-26
 
 First public release of the verdict-only prompt-injection firewall.

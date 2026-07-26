@@ -46,13 +46,12 @@ const RESET: &str = "\x1b[0m";
 
 const KNIGHT_ART: &str = include_str!("../assets/knight.txt");
 const KNIGHT_COLORS: &str = include_str!("../assets/knight.colors");
-/// Terminal rows below which the knight is dropped entirely.
+/// Terminal rows below which the detailed knight is replaced by the compact mark.
 ///
-/// It is drawn whole or not at all. Cropping line art of a *figure* severs it
-/// mid-torso and reads as a rendering bug rather than a deliberate emblem, so
-/// either the terminal can seat all 18 rows with a usable event feed still under
-/// them, or the header is the banner alone, which looks intentional.
-const KNIGHT_MIN_ROWS: usize = 44;
+/// At 56 rows the 18-row knight still leaves an 18-row event body. Below that,
+/// the six-row mark preserves the event feed instead of spending half the screen
+/// on branding.
+const KNIGHT_MIN_ROWS: usize = 56;
 /// Palette indices used by `knight.colors`: 0..=3.
 const KNIGHT_PALETTE: [(u8, u8, u8); 4] = [
     (0xF0, 0x80, 0x80),
@@ -66,6 +65,19 @@ const BANNER: &str = r#"███ ▄██ ██▄ ███ ▄██
  █  █ █ ██▀  █   ▀█
 ███ ▀██ █ █ ███ ██▀
 "#;
+
+const COMPACT_BANNER: &str = r#"█  █▀▀ █▀█ █ █▀▀
+█  █▄█ █▀▄ █ ▄▄█"#;
+
+/// Compact mark for normal-height terminals.
+const COMPACT_MARK: &str = r#"   ⢰⡆
+ ⣀⡤⠸⠇⢤⣀
+⡞⠁⢀⢼⡧⡀⠈⢹
+⡇ ⣟⢯⡵⢻ ⢸
+⢇ ⠿⣏⢹⠿ ⡸
+ ⠑⢄⠹⠟⡠⠊
+   ⢹⡆
+   ⠈⠁"#;
 
 /// Redraw cadence. 4 Hz is fast enough to feel live and slow enough that the
 /// per-frame `stty size` + full repaint costs nothing measurable.
@@ -317,8 +329,21 @@ fn spark_idx(score: u8) -> usize {
     (score as usize * 8 / 101).min(7)
 }
 
-fn sparkline(scores: &[u8]) -> String {
-    scores.iter().map(|s| SPARKS[spark_idx(*s)]).collect()
+fn sparkline(scores: &[u8], escalate_at: u8, block_at: u8) -> String {
+    let mut out = String::new();
+    for score in scores {
+        let color = if *score >= block_at {
+            C_BLOCK
+        } else if *score >= escalate_at {
+            C_WARN
+        } else {
+            C_DIM
+        };
+        out.push_str(color);
+        out.push(SPARKS[spark_idx(*score)]);
+    }
+    out.push_str(RESET);
+    out
 }
 
 // ── ANSI-aware text helpers ─────────────────────────────────────────────────
@@ -657,6 +682,16 @@ fn stacked_bar(w: usize, warn: usize, block: usize) -> String {
     )
 }
 
+fn risk_meter(w: usize, score: u8, action: &str) -> String {
+    let filled = (score as usize * w).div_ceil(100).min(w);
+    let color = if action == "block" { C_BLOCK } else { C_WARN };
+    format!(
+        "{color}{}{C_DIMMER}{}{RESET}",
+        "█".repeat(filled),
+        "░".repeat(w - filled)
+    )
+}
+
 /// Rules from the instruction-override, combination and exfiltration families
 /// are the ones that mean an actual attack rather than a stylistic smell, so
 /// they get the hotter bar.
@@ -667,6 +702,9 @@ fn rule_is_hot(id: &str) -> bool {
 // ── events view ─────────────────────────────────────────────────────────────
 
 const SORT_NAMES: [&str; 4] = ["time", "score", "source", "action"];
+const COMPACT_VIEW_NAMES: [&str; 6] = [
+    "EVENTS", "VERDICTS", "PIPELINE", "SCORES", "CONFIG", "RULES",
+];
 
 /// Interactive state of the events table: substring filter, sort column and
 /// cursor. Lives outside the frame so it survives redraws.
@@ -675,6 +713,8 @@ struct View {
     filter: String,
     /// True while `/` filter input is being typed in the footer.
     typing: bool,
+    /// Replace the events list with the selected event's in-card detail view.
+    detail: bool,
     /// Index into `SORT_NAMES`; 0 = time = raw log order.
     sort: usize,
     /// Selected record, counted from the bottom of the display order (0 = last).
@@ -683,6 +723,18 @@ struct View {
     sel: usize,
     /// Bottom-most visible record, same coordinates as `sel`.
     scroll: usize,
+    /// Full-width panel selected by ←/→ in the compact layout.
+    page: usize,
+}
+
+impl View {
+    fn next_page(&mut self) {
+        self.page = (self.page + 1) % COMPACT_VIEW_NAMES.len();
+    }
+
+    fn previous_page(&mut self) {
+        self.page = (self.page + COMPACT_VIEW_NAMES.len() - 1) % COMPACT_VIEW_NAMES.len();
+    }
 }
 
 /// Records visible under the current filter and sort, in display order — the
@@ -717,7 +769,7 @@ fn view_rows<'a>(recs: &'a [Rec], v: &View) -> Vec<&'a Rec> {
 
 // ── panels ──────────────────────────────────────────────────────────────────
 
-fn panel_verdicts(w: usize, a: &Agg) -> Vec<String> {
+fn panel_verdicts(w: usize, h: usize, a: &Agg) -> Vec<String> {
     let inner = w.saturating_sub(4);
     // `total` is what is held in memory, which is capped. Once the cap is hit the
     // count stops rising and every percentage below describes the window, not the
@@ -731,21 +783,21 @@ fn panel_verdicts(w: usize, a: &Agg) -> Vec<String> {
     let body = vec![
         format!("{C_DIM}{scope}{RESET}  {C_BRIGHT}{}{RESET}", a.total),
         format!(
-            "{C_WARN}warn{RESET}  {C_BRIGHT}{:<4}{RESET}{C_DIM}{:.1}%{RESET}",
+            "{C_WARN}warn{RESET}  {C_BRIGHT}{:<4}{RESET} {C_DIM}{:.1}%{RESET}",
             a.warn,
             percent(a.warn, a.total)
         ),
         format!(
-            "{C_BLOCK}block{RESET} {C_BRIGHT}{:<4}{RESET}{C_DIM}{:.1}%{RESET}",
+            "{C_BLOCK}block{RESET} {C_BRIGHT}{:<4}{RESET} {C_DIM}{:.1}%{RESET}",
             a.block,
             percent(a.block, a.total)
         ),
         stacked_bar(inner, a.warn, a.block),
     ];
-    boxed("VERDICTS", w, &body, 4)
+    boxed("VERDICTS", w, &body, h)
 }
 
-fn panel_pipeline(w: usize, a: &Agg) -> Vec<String> {
+fn panel_pipeline(w: usize, h: usize, a: &Agg) -> Vec<String> {
     let s1 = a.total.saturating_sub(a.stage2);
     let amb = a.total.saturating_sub(a.certain);
     let body = vec![
@@ -765,11 +817,15 @@ fn panel_pipeline(w: usize, a: &Agg) -> Vec<String> {
             a.certain, amb
         ),
     ];
-    boxed("PIPELINE", w, &body, 4)
+    boxed("PIPELINE", w, &body, h)
 }
 
-fn panel_scores(w: usize, a: &Agg) -> Vec<String> {
-    let spark = sparkline(&a.recent_scores);
+fn panel_scores(w: usize, h: usize, a: &Agg, cfg: &Config) -> Vec<String> {
+    let spark = sparkline(
+        &a.recent_scores,
+        cfg.escalate_threshold,
+        cfg.block_threshold,
+    );
     let body = vec![
         format!(
             "{C_DIM}min{RESET} {C_BRIGHT}{:<5}{RESET}{C_DIM}median{RESET} {C_BRIGHT}{}{RESET}",
@@ -779,14 +835,13 @@ fn panel_scores(w: usize, a: &Agg) -> Vec<String> {
             "{C_DIM}p95{RESET} {C_BRIGHT}{:<5}{RESET}{C_DIM}max{RESET}    {C_BRIGHT}{}{RESET}",
             a.p95, a.max
         ),
-        String::new(),
-        // `boxed` pads/clips every body line to the panel's inner width already.
-        format!("{C_RED}{spark}{RESET}"),
+        format!("{C_DIM}recent  low· {RESET}{C_WARN}mid◆ {RESET}{C_BLOCK}high◆{RESET}"),
+        spark,
     ];
-    boxed("SCORES", w, &body, 4)
+    boxed("SCORES", w, &body, h)
 }
 
-fn panel_config(w: usize, cfg: &Config) -> Vec<String> {
+fn panel_config(w: usize, h: usize, cfg: &Config) -> Vec<String> {
     let onoff = |b: bool| {
         if b {
             format!("{C_PASS}on{RESET}")
@@ -809,10 +864,10 @@ fn panel_config(w: usize, cfg: &Config) -> Vec<String> {
             format!("{C_TEXT}closed{RESET} {C_DIM}(hook: degrade-s1){RESET}"),
         ),
     ];
-    boxed("CONFIG", w, &body, 6)
+    boxed("CONFIG", w, &body, h)
 }
 
-fn panel_rules(w: usize, a: &Agg) -> Vec<String> {
+fn panel_rules(w: usize, h: usize, a: &Agg) -> Vec<String> {
     let inner = w.saturating_sub(4);
     let max = a.rules.first().map(|r| r.1).unwrap_or(1).max(1);
     let bar_w = inner.saturating_sub(30);
@@ -839,7 +894,65 @@ fn panel_rules(w: usize, a: &Agg) -> Vec<String> {
     if body.is_empty() {
         body.push(format!("{C_DIM}no rules fired yet{RESET}"));
     }
-    boxed("TOP RULES · NON-PASS VERDICTS", w, &body, 6)
+    boxed("TOP RULES · NON-PASS VERDICTS", w, &body, h)
+}
+
+fn panel_event_detail(w: usize, h: usize, visible: usize, r: &Rec, v: &View) -> Vec<String> {
+    let inner = w.saturating_sub(4);
+    let (color, action) = if r.action == "block" {
+        (C_BLOCK, "BLOCK")
+    } else {
+        (C_WARN, "WARN")
+    };
+    let pipeline = if r.stage2 { "STAGE 2" } else { "STAGE 1" };
+    let evidence = match &r.excerpt {
+        Some(excerpt) => format!(
+            "{C_DIM}excerpt{RESET}  {C_TEXT}{}{RESET}",
+            sanitize(excerpt)
+        ),
+        None => format!(
+            "{C_DIM}fingerprint{RESET}  {C_TEXT}{}{RESET}",
+            sanitize(&r.sha256)
+        ),
+    };
+    let signals = if r.rules.is_empty() {
+        format!("{C_DIM}signals{RESET}  none recorded")
+    } else {
+        format!(
+            "{C_DIM}signals{RESET}  {C_BAR_COOL}{}{RESET}",
+            sanitize(&r.rules.join("  ◆  "))
+        )
+    };
+    let mut body = vec![
+        format!(
+            "{color}◆ {action}{RESET}  {C_BRIGHT}RISK {:>3}/100{RESET}  {C_DIM}{}{RESET}",
+            r.score,
+            sanitize(&r.confidence).to_uppercase()
+        ),
+        risk_meter(inner, r.score, &r.action),
+        format!(
+            "{C_DIM}{}{RESET}  {C_TEXT}{}{RESET}  {C_RED}{pipeline}{RESET}",
+            clock(r.ts % 86_400),
+            sanitize(&r.source)
+        ),
+        evidence,
+        signals,
+    ];
+    if h > 7 && !r.rules.is_empty() {
+        body.push(String::new());
+        body.push(format!("{C_DIM}RULE SIGNALS{RESET}"));
+        body.extend(
+            r.rules
+                .iter()
+                .map(|rule| format!("{C_BAR_COOL}◆{RESET} {}", sanitize(rule))),
+        );
+    }
+    let label = format!(
+        "EVENT DETAIL · {}/{} · ENTER/ESC BACK",
+        visible - v.sel,
+        visible
+    );
+    boxed(&label, w, &body, h)
 }
 
 fn panel_events(
@@ -861,9 +974,13 @@ fn panel_events(
     let n = rows.len();
     if n == 0 {
         (v.sel, v.scroll) = (0, 0);
+        v.detail = false;
     } else {
         v.sel = v.sel.min(n - 1);
         v.scroll = v.scroll.min(v.sel);
+        if v.detail {
+            return panel_event_detail(w, h, n, rows[n - 1 - v.sel], v);
+        }
         let height = |i: usize| 1 + usize::from(!rows[n - 1 - i].rules.is_empty());
         while v.scroll < v.sel && (v.scroll..=v.sel).map(height).sum::<usize>() > h {
             v.scroll += 1;
@@ -1011,24 +1128,23 @@ fn vcenter(mut lines: Vec<String>, h: usize, w: usize) -> Vec<String> {
 }
 
 fn header(w: usize, rows: usize, cfg: &Config, uptime: Duration) -> Vec<String> {
-    // One if-statement, not a layout engine: the knight only appears when there
-    // is unambiguously room for it.
     let show_knight = rows >= KNIGHT_MIN_ROWS && w >= 107;
-    let knight = if show_knight {
+    let mark = if show_knight {
         knight_rows()
     } else {
-        Vec::new()
+        COMPACT_MARK
+            .lines()
+            .map(|line| format!("{C_RED}{line}{RESET}"))
+            .collect()
     };
-    let kw = if show_knight { 14 } else { 0 };
-    // Without the knight the header is exactly the centre block: 4 banner rows,
-    // a blank, the wordmark and the tagline. Anything less truncates the tagline
-    // off the bottom, which is header content the design has unconditionally.
-    let h = if show_knight { knight.len() } else { 7 };
+    let kw = if show_knight { 14 } else { 8 };
+    let h = mark.len();
 
     let meta_w = 46.min(w / 3);
-    let center_w = w.saturating_sub(kw + meta_w + if show_knight { 4 } else { 2 });
+    let center_w = w.saturating_sub(kw + meta_w + 4);
 
-    let mut center: Vec<String> = BANNER
+    let banner = if show_knight { BANNER } else { COMPACT_BANNER };
+    let mut center: Vec<String> = banner
         .lines()
         .map(|l| format!("{C_RED}{l}{RESET}"))
         .collect();
@@ -1038,23 +1154,21 @@ fn header(w: usize, rows: usize, cfg: &Config, uptime: Duration) -> Vec<String> 
         "{C_DIM}prompt-injection firewall · verdict-only · pass or block{RESET}"
     ));
 
-    let mut blocks = Vec::new();
-    if show_knight {
-        blocks.push(knight);
-    }
-    blocks.push(vcenter(center, h, center_w));
-    blocks.push(vcenter(meta_block(meta_w, cfg, uptime), h, meta_w));
+    let blocks = vec![
+        vcenter(mark, h, kw),
+        vcenter(center, h, center_w),
+        vcenter(meta_block(meta_w, cfg, uptime), h, meta_w),
+    ];
     hjoin(&blocks, 2)
 }
 
 // ── frame ───────────────────────────────────────────────────────────────────
 
-/// Fixed chrome above the events panel: header 7, blank, stat row 6, blank,
-/// config/rules 8, blank. Plus the events box (2 border rows + at least 1) and
-/// the footer, that is the smallest terminal this layout actually fits in — and
-/// the guard has to say so, because `ev_h.max(1)` builds an oversize frame that
-/// `truncate` then silently shears the events panel and the quit hint off of.
-const MIN_ROWS: usize = 28;
+/// The compact 24-row layout seats an eight-row header, six-row stats, a
+/// five-row event body, its border, and the footer. Secondary panels return at
+/// 40 rows.
+const MIN_ROWS: usize = 24;
+const SECONDARY_MIN_ROWS: usize = 40;
 const MIN_COLS: usize = 60;
 
 fn frame(
@@ -1075,41 +1189,64 @@ fn frame(
 
     let a = aggregate(recs);
     let mut out: Vec<String> = Vec::with_capacity(rows);
+    let compact = rows < SECONDARY_MIN_ROWS;
+    let log = cfg.audit_path();
+    let missing = !log.exists();
+    let vrows = view_rows(recs, view);
 
     out.extend(header(w, rows, cfg, uptime));
     out.push(String::new());
 
-    let c3 = split(w, 3, 1);
-    out.extend(hjoin(
-        &[
-            panel_verdicts(c3[0], &a),
-            panel_pipeline(c3[1], &a),
-            panel_scores(c3[2], &a),
-        ],
-        1,
-    ));
-    out.push(String::new());
+    if compact {
+        // One full-width panel at a time: small terminals lose no functionality
+        // and spend their scarce columns on content instead of six tiny boxes.
+        let body_h = rows.saturating_sub(out.len() + 3);
+        let panel = match view.page {
+            1 => panel_verdicts(w, body_h, &a),
+            2 => panel_pipeline(w, body_h, &a),
+            3 => panel_scores(w, body_h, &a, cfg),
+            4 => panel_config(w, body_h, cfg),
+            5 => panel_rules(w, body_h, &a),
+            _ => panel_events(
+                w,
+                body_h,
+                recs.len(),
+                &vrows,
+                view,
+                missing.then_some(log.as_path()),
+            ),
+        };
+        out.extend(panel);
+    } else {
+        let c3 = split(w, 3, 1);
+        out.extend(hjoin(
+            &[
+                panel_verdicts(c3[0], 4, &a),
+                panel_pipeline(c3[1], 4, &a),
+                panel_scores(c3[2], 4, &a, cfg),
+            ],
+            1,
+        ));
+        out.push(String::new());
 
-    let c2 = split(w, 2, 1);
-    out.extend(hjoin(
-        &[panel_config(c2[0], cfg), panel_rules(c2[1], &a)],
-        1,
-    ));
-    out.push(String::new());
+        let c2 = split(w, 2, 1);
+        out.extend(hjoin(
+            &[panel_config(c2[0], 6, cfg), panel_rules(c2[1], 6, &a)],
+            1,
+        ));
+        out.push(String::new());
 
-    // Events take whatever is left, minus its own border and the footer.
-    let ev_h = rows.saturating_sub(out.len() + 3).max(1);
-    let log = cfg.audit_path();
-    let missing = !log.exists();
-    let vrows = view_rows(recs, view);
-    out.extend(panel_events(
-        w,
-        ev_h,
-        recs.len(),
-        &vrows,
-        view,
-        missing.then_some(log.as_path()),
-    ));
+        // Events take whatever is left, minus its own border and the footer.
+        let ev_h = rows.saturating_sub(out.len() + 3).max(1);
+        out.extend(panel_events(
+            w,
+            ev_h,
+            recs.len(),
+            &vrows,
+            view,
+            missing.then_some(log.as_path()),
+        ));
+    }
 
     // A monitor that cannot distinguish "quiet" from "blind" is the wrong
     // failure mode: once any record has been read the waiting note is gone, so
@@ -1128,9 +1265,22 @@ fn frame(
             "{C_DIM}filter{RESET} {C_BRIGHT}{}▏{RESET}  {C_DIM}enter{RESET} keep  {C_DIM}esc{RESET} clear",
             sanitize(&view.filter)
         )
+    } else if compact {
+        let page = COMPACT_VIEW_NAMES[view.page];
+        if view.page == 0 {
+            format!(
+                "{C_DIM}←→{RESET} {C_BRIGHT}{page}{RESET}  {C_DIM}↑↓{RESET} nav  {C_DIM}enter{RESET} detail  {C_DIM}/{RESET} filter  {C_DIM}q{RESET} quit"
+            )
+        } else {
+            format!(
+                "{C_DIM}←→{RESET} {C_BRIGHT}{page}{RESET}  {C_DIM}q{RESET} quit  {C_DIM}p{RESET} pause"
+            )
+        }
+    } else if view.detail {
+        format!("{C_DIM}enter/esc{RESET} events  {C_DIM}↑↓{RESET} next event  {C_DIM}q{RESET} quit")
     } else {
         format!(
-            "{C_DIM}q{RESET} quit  {C_DIM}p{RESET} pause  {C_DIM}/{RESET} filter  {C_DIM}s{RESET} sort·{}  {C_DIM}↑↓{RESET} nav",
+            "{C_DIM}q{RESET} quit  {C_DIM}p{RESET} pause  {C_DIM}/{RESET} filter  {C_DIM}s{RESET} sort·{}  {C_DIM}↑↓{RESET} nav  {C_DIM}enter{RESET} detail",
             SORT_NAMES[view.sort]
         )
     };
@@ -1187,6 +1337,8 @@ pub fn run(cfg: Config) -> i32 {
     let mut view = View::default();
 
     loop {
+        let (rows, cols) = term_size();
+        let compact = rows < SECONDARY_MIN_ROWS;
         loop {
             let b = match rx.try_recv() {
                 Ok(b) => b,
@@ -1214,22 +1366,38 @@ pub fn run(cfg: Config) -> i32 {
                 // byte instead of a signal and we must quit on it ourselves.
                 b'q' | b'Q' | 0x03 | 0x04 => return 0,
                 b'p' | b'P' => paused = !paused,
-                b'/' => view.typing = true,
-                b's' | b'S' => {
+                b'/' => {
+                    view.page = 0;
+                    view.detail = false;
+                    view.typing = true;
+                }
+                b'\r' | b'\n' if !compact || view.page == 0 => {
+                    view.detail = !view.detail;
+                }
+                b's' | b'S' if !compact || view.page == 0 => {
                     view.sort = (view.sort + 1) % SORT_NAMES.len();
                     (view.sel, view.scroll) = (0, 0);
                 }
-                b'k' | b'K' => view.sel += 1,
-                b'j' | b'J' => view.sel = view.sel.saturating_sub(1),
+                b'k' | b'K' if !compact || view.page == 0 => view.sel += 1,
+                b'j' | b'J' if !compact || view.page == 0 => {
+                    view.sel = view.sel.saturating_sub(1);
+                }
                 // ponytail: arrow keys are 3 bytes; the input thread reads up to
                 // 64 at once, so both trailing bytes are almost always already
                 // in the channel. If one straddles a read, the key is dropped
                 // for a frame — j/k always work.
                 0x1b => match (rx.try_recv(), rx.try_recv()) {
-                    (Ok(b'['), Ok(b'A')) => view.sel += 1,
-                    (Ok(b'['), Ok(b'B')) => view.sel = view.sel.saturating_sub(1),
+                    (Ok(b'['), Ok(b'A')) if !compact || view.page == 0 => view.sel += 1,
+                    (Ok(b'['), Ok(b'B')) if !compact || view.page == 0 => {
+                        view.sel = view.sel.saturating_sub(1);
+                    }
+                    (Ok(b'['), Ok(b'C')) if compact => view.next_page(),
+                    (Ok(b'['), Ok(b'D')) if compact => view.previous_page(),
                     (Ok(b'['), Ok(_)) => {}
-                    _ => view.filter.clear(),
+                    _ => {
+                        view.detail = false;
+                        view.filter.clear();
+                    }
                 },
                 _ => {}
             }
@@ -1246,7 +1414,6 @@ pub fn run(cfg: Config) -> i32 {
             }
         }
 
-        let (rows, cols) = term_size();
         let text = frame(rows, cols, &cfg, &recs, start.elapsed(), paused, &mut view);
         // One write per frame: partial frames are what tearing looks like.
         let mut out = std::io::stdout().lock();
@@ -1360,8 +1527,12 @@ mod tests {
         assert_eq!(spark_idx(0), 0);
         assert_eq!(spark_idx(100), 7);
         assert!(spark_idx(50) > spark_idx(10));
-        assert_eq!(sparkline(&[0, 100]), "▁█");
-        assert_eq!(sparkline(&[]), "");
+        let spark = sparkline(&[0, 50, 100], 50, 80);
+        assert_eq!(vis_len(&spark), 3);
+        assert!(spark.contains(C_DIM));
+        assert!(spark.contains(C_WARN));
+        assert!(spark.contains(C_BLOCK));
+        assert_eq!(vis_len(&sparkline(&[], 50, 80)), 0);
     }
 
     #[test]
@@ -1442,6 +1613,105 @@ mod tests {
         // ending at the one below the cursor.
         assert_eq!(v.scroll, 8);
         assert_eq!(out.len(), 6, "body plus two border rows");
+    }
+
+    #[test]
+    fn normal_terminal_brand_and_event_detail_keep_their_shape() {
+        let brand = header(100, 32, &Config::default(), Duration::ZERO).join("\n");
+        assert!(brand.contains("⣟⢯⡵⢻"), "compact knight mark must remain");
+        assert!(brand.contains("█  █▀▀ █▀█ █ █▀▀"));
+        assert!(brand.contains("G U A R D I A N"));
+
+        let recs = [rec(
+            "block",
+            92,
+            true,
+            "certain",
+            &["instr.override", "exfil.url"],
+        )];
+        let rows: Vec<&Rec> = recs.iter().collect();
+        let mut v = View {
+            detail: true,
+            ..Default::default()
+        };
+        let detail = panel_events(80, 5, 1, &rows, &mut v, None);
+        let text = detail.join("\n");
+        assert!(text.contains("EVENT DETAIL"));
+        assert!(text.contains("RISK  92/100"));
+        assert!(text.contains("instr.override"));
+        assert!(detail.iter().all(|line| vis_len(line) == 80));
+        assert_eq!(vis_len(&risk_meter(20, 92, "block")), 20);
+    }
+
+    #[test]
+    fn small_terminal_prioritizes_the_event_feed() {
+        let recs: Vec<Rec> = (0..6)
+            .map(|score| rec("warn", score, false, "ambiguous", &[]))
+            .collect();
+        let rendered = frame(
+            MIN_ROWS,
+            100,
+            &Config::default(),
+            &recs,
+            Duration::ZERO,
+            false,
+            &mut View::default(),
+        );
+
+        assert_eq!(rendered.matches("\r\n").count() + 1, MIN_ROWS);
+        assert_eq!(rendered.matches(" WARN").count(), recs.len());
+        assert!(!rendered.contains("CONFIG"));
+        assert!(!rendered.contains("TOP RULES"));
+
+        for rows in [39, 40, 55, 56] {
+            let rendered = frame(
+                rows,
+                120,
+                &Config::default(),
+                &recs,
+                Duration::ZERO,
+                false,
+                &mut View::default(),
+            );
+            assert_eq!(rendered.matches("\r\n").count() + 1, rows);
+            assert_eq!(rendered.contains("CONFIG"), rows >= SECONDARY_MIN_ROWS);
+            assert_eq!(
+                rendered.contains("███ ▄██ ██▄ ███ ▄██"),
+                rows >= KNIGHT_MIN_ROWS
+            );
+        }
+
+        let pages = [
+            "EVENTS · LIVE",
+            "VERDICTS",
+            "PIPELINE",
+            "SCORES",
+            "CONFIG",
+            "TOP RULES",
+        ];
+        for (page, label) in pages.iter().enumerate() {
+            let mut view = View {
+                page,
+                ..Default::default()
+            };
+            let rendered = frame(
+                32,
+                100,
+                &Config::default(),
+                &recs,
+                Duration::ZERO,
+                false,
+                &mut view,
+            );
+            assert!(rendered.contains(label), "compact page {page}: {label}");
+            assert_eq!(rendered.matches("\r\n").count() + 1, 32);
+        }
+
+        let mut view = View::default();
+        view.previous_page();
+        assert_eq!(view.page, COMPACT_VIEW_NAMES.len() - 1);
+        view.next_page();
+        assert_eq!(view.page, 0);
     }
 
     #[test]

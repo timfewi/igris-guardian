@@ -22,3 +22,5 @@ secrets/
 
 # Internal design notes, not part of the public project
 igris-guard-wall-report.md
+/.direnv
+/.envrc

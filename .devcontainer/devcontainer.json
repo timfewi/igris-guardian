@@ -1,0 +1,35 @@
+{
+  "name": "Igris Guardian",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/nix:1": {
+      "packages": "direnv"
+    }
+  },
+  "postCreateCommand": "nix develop --command cargo fetch",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "mkhl.direnv",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "vadimcn.vscode-lldb"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "rust-analyzer.check.command": "clippy",
+        "terminal.integrated.defaultProfile.linux": "Igris",
+        "terminal.integrated.profiles.linux": {
+          "Igris": {
+            "path": "/bin/bash",
+            "args": [
+              "-lc",
+              "exec nix develop --command zsh -l"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "remoteUser": "vscode"
+}
