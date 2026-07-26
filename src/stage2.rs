@@ -51,12 +51,23 @@ struct ResponseFormat {
     kind: &'static str,
 }
 
+/// OpenRouter routing preference. Only ever serialized when the operator opted
+/// in — generic OpenAI-compatible endpoints reject unknown request fields.
+#[derive(Serialize)]
+struct ProviderPrefs {
+    zdr: bool,
+}
+
 #[derive(Serialize)]
 struct ChatRequest {
     model: String,
     messages: [ChatMsg; 2],
     temperature: u8,
     response_format: ResponseFormat,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider: Option<ProviderPrefs>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -122,6 +133,8 @@ async fn try_classify(
         response_format: ResponseFormat {
             kind: "json_object",
         },
+        provider: cfg.zdr_only.then_some(ProviderPrefs { zdr: true }),
+        reasoning_effort: (!cfg.reasoning_effort.is_empty()).then(|| cfg.reasoning_effort.clone()),
     };
 
     let mut req = client.post(&url).json(&body);
@@ -196,7 +209,60 @@ mod tests {
             api_key_env: "IGRIS_TEST_STAGE2_KEY_UNSET".to_string(),
             api_key_file: String::new(),
             timeout_ms: 2000,
+            zdr_only: false,
+            reasoning_effort: String::new(),
         }
+    }
+
+    /// The opt-in fields must be absent from the wire format unless configured:
+    /// unknown fields are a hard 400 on plain OpenAI-compatible endpoints.
+    #[test]
+    fn optional_request_fields_serialize_only_when_set() {
+        let bare = serde_json::to_string(&ChatRequest {
+            model: "m".into(),
+            messages: [
+                ChatMsg {
+                    role: "system",
+                    content: String::new(),
+                },
+                ChatMsg {
+                    role: "user",
+                    content: String::new(),
+                },
+            ],
+            temperature: 0,
+            response_format: ResponseFormat {
+                kind: "json_object",
+            },
+            provider: None,
+            reasoning_effort: None,
+        })
+        .unwrap();
+        assert!(!bare.contains("provider"));
+        assert!(!bare.contains("reasoning_effort"));
+
+        let full = serde_json::to_string(&ChatRequest {
+            model: "m".into(),
+            messages: [
+                ChatMsg {
+                    role: "system",
+                    content: String::new(),
+                },
+                ChatMsg {
+                    role: "user",
+                    content: String::new(),
+                },
+            ],
+            temperature: 0,
+            response_format: ResponseFormat {
+                kind: "json_object",
+            },
+            provider: Some(ProviderPrefs { zdr: true }),
+            reasoning_effort: Some("low".to_string()),
+        })
+        .unwrap();
+        assert!(full.contains(r#""provider":{"zdr":true}"#));
+        assert!(full.contains(r#""reasoning_effort":"low""#));
     }
 
     #[tokio::test]

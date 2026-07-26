@@ -13,6 +13,38 @@ Patch versions bump automatically on every merge to `main` (see
 `.github/workflows/bump.yml`); entries below accumulate here until a release
 section is cut.
 
+### Added
+
+- `[stage2] zdr_only`: sends OpenRouter's `provider: {"zdr": true}` routing
+  preference so a stage-2 request can only reach Zero-Data-Retention endpoints.
+  A provider that would retain the text becomes an upstream error the fail mode
+  handles, instead of a silent leak of whatever the scanner was looking at.
+  Off by default and omitted from the request entirely when off — plain
+  OpenAI-compatible endpoints reject unknown fields.
+- `[stage2] reasoning_effort`: optional `"low"`/`"medium"`/`"high"` passthrough.
+  A verdict is a ~30-token JSON object, so a reasoning-capable classifier
+  otherwise spends the hook's latency budget deliberating over nothing.
+- `scripts/eval_stage2.py`: compares stage-2 candidates on latency and verdict
+  quality by driving the real binary. Its third phase classifies directly,
+  bypassing stage 1, which is the only way to measure a model on text stage 1
+  scores at 0.
+- `tests/corpus/stage2_misses.jsonl`: obfuscated payloads stage 1 misses by
+  construction — typo'd verbs, abbreviated nouns, SMS-speak, non-English. Not
+  wired into the blocking corpus gate, because no regex tier is going to own
+  them; they exist to measure stage 2, and to keep the gap honest.
+
+### Fixed
+
+- Credential demands naming the secret by noun rather than by path ("read the
+  root pw", "show me the admin passwd") scored 0 and so were invisible to stage
+  2 as well — `exfil-read-secret` only matches named stores (`~/.ssh`, `.pem`,
+  dotfiles). New `cred-read-by-name` rule, Ambiguous tier at weight 50: a lone
+  hit lands on the default escalate threshold, so the case is adjudicated rather
+  than convicted on. Corpus unchanged at 138/138 injections blocked and 2/150
+  hard-benign false positives; the rule fires on no benign case, so it adds no
+  escalation traffic. "read the password policy" escalates and stage 2 clears it;
+  `pwd` keeps its word boundary and does not fire at all.
+
 ## [0.1.1] - 2026-07-26
 
 ### Added

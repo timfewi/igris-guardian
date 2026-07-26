@@ -73,6 +73,16 @@ pub struct Stage2Config {
     /// `api_key_env`. Empty = unused. Never the key itself.
     pub api_key_file: String,
     pub timeout_ms: u64,
+    /// Send OpenRouter's `provider: {"zdr": true}` routing preference so the
+    /// request can only reach Zero-Data-Retention endpoints — misrouting to a
+    /// retaining provider becomes an upstream error instead of a silent leak.
+    /// OpenRouter-specific: leave false for other OpenAI-compatible endpoints,
+    /// which may reject the unknown field.
+    pub zdr_only: bool,
+    /// `reasoning_effort` sent with each request (`"low"`/`"medium"`/`"high"`,
+    /// empty = not sent). Reasoning models (Mercury 2 et al.) otherwise spend
+    /// their latency budget thinking before the first verdict token.
+    pub reasoning_effort: String,
 }
 
 impl Default for Stage2Config {
@@ -84,6 +94,8 @@ impl Default for Stage2Config {
             api_key_env: "IGRIS_STAGE2_KEY".to_string(),
             api_key_file: String::new(),
             timeout_ms: 5000,
+            zdr_only: false,
+            reasoning_effort: String::new(),
         }
     }
 }
