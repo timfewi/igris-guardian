@@ -103,7 +103,7 @@ async fn handle_post_tool_use(engine: &Engine, data: &Value) -> i32 {
     let content = match tool_name.as_str() {
         "Read" | "WebFetch" => extract_content_field(tool_response),
         "Bash" => extract_bash(tool_response),
-        _ => serde_json::to_string(tool_response).unwrap_or_default(), // WebSearch, mcp__*
+        _ => extract_text_nodes(tool_response), // WebSearch, mcp__*
     };
     if content.len() < 20 {
         return 0;
@@ -165,31 +165,65 @@ fn build_advisory(v: &Verdict, tool_name: &str, source: &str) -> String {
     )
 }
 
+/// Every string value in a JSON response, one per line.
+///
+/// The scanner must be given the *text*, never the document that carries it.
+/// `serde_json::to_string` wraps every payload string in double quotes, and
+/// [`crate::rules`]'s quoting rule then reads the payload as a mention rather
+/// than an utterance — demoting Certain evidence to Ambiguous at half weight.
+/// That took a real `mcp__*` payload from score 100 (block) down to 45, which is
+/// below `escalate_threshold`, so it passed without even reaching stage 2.
+/// Harvesting the leaves hands the scanner the same bytes the model will read.
+///
+/// Newline-joined on purpose: the bounded-gap rules (`.{0,50}`, `[^.\n]{0,60}`)
+/// do not cross a newline, so two unrelated fields cannot combine into a match
+/// that neither of them contains.
+fn extract_text_nodes(resp: &Value) -> String {
+    let mut out = Vec::new();
+    collect_strings(resp, &mut out);
+    out.join("\n")
+}
+
+/// Depth is bounded by serde_json's own 128-level nesting limit, so a hostile
+/// response cannot recurse this into a stack overflow.
+fn collect_strings(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::String(s) => out.push(s.clone()),
+        Value::Array(a) => a.iter().for_each(|x| collect_strings(x, out)),
+        // Values only. Keys are field names the tool chose, not content.
+        // ponytail: a server that smuggles a payload into a key evades this —
+        // add `out.push(k.clone())` here if that ever shows up in the wild.
+        Value::Object(o) => o.values().for_each(|x| collect_strings(x, out)),
+        _ => {}
+    }
+}
+
 /// Mirrors `data.tool_response` extraction for Read/WebFetch in
 /// gsd-read-injection-scanner.js: string, `.content` (string | array of
-/// `{text}`), else serialize the whole response.
+/// `{text}`), else every string in the response.
 fn extract_content_field(resp: &Value) -> String {
     match resp {
         Value::String(s) => s.clone(),
         Value::Object(_) => match resp.get("content") {
+            Some(Value::String(s)) => s.clone(),
             Some(Value::Array(arr)) => arr
                 .iter()
                 .map(|b| match b {
                     Value::String(s) => s.clone(),
-                    Value::Object(_) => b
+                    // A block that keeps its text somewhere other than `.text`
+                    // gets scanned rather than silently dropped.
+                    _ => b
                         .get("text")
                         .and_then(|t| t.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    _ => String::new(),
+                        .map(str::to_string)
+                        .unwrap_or_else(|| extract_text_nodes(b)),
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-            Some(Value::Null) | None => serde_json::to_string(resp).unwrap_or_default(),
-            Some(Value::String(s)) => s.clone(),
-            Some(other) => other.to_string(),
+            // No usable `.content`: scan whatever text the response does carry.
+            _ => extract_text_nodes(resp),
         },
-        _ => String::new(),
+        other => extract_text_nodes(other),
     }
 }
 
