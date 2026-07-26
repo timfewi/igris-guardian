@@ -965,7 +965,7 @@ fn override_scopes() -> &'static Vec<String> {
 fn matches_list(word: &str, list: &[String]) -> bool {
     list.iter().any(|entry| {
         if entry.len() >= FUZZY_MIN_LEN {
-            within_one_edit(word, entry)
+            within_edits(word, entry, MAX_NOUN_EDITS)
         } else {
             word == entry
         }
@@ -1000,37 +1000,45 @@ fn confusables() -> &'static std::collections::HashMap<char, char> {
     })
 }
 
-/// Can `a` become `b` with at most one insertion, deletion or substitution?
+/// Edits tolerated between a written word and the noun it is reaching for.
 ///
-/// Bounded by construction — one pass, no matrix, no allocation. Compares bytes
-/// because the callers lowercase first and the targets are ASCII; a token with
-/// multibyte characters simply will not match, which is correct here since
-/// homoglyphs are already folded upstream by `normalize`.
-fn within_one_edit(a: &str, b: &str) -> bool {
+/// One was not enough, and the counter-example is instructive: `puswort` is two
+/// edits from `passwort` — a substituted vowel and a dropped consonant — and
+/// still unmistakable to anything that reads it. Two is where this stops, and
+/// the stopping point is measured rather than chosen: on the hard benign corpus
+/// the second edit costs 2 additional escalations out of 150 and no new hit on
+/// ordinary language, while a third would start pulling in real words.
+const MAX_NOUN_EDITS: usize = 2;
+
+/// Levenshtein distance between `a` and `b`, giving up once it exceeds `max`.
+///
+/// Compares bytes: callers fold to lowercase ASCII skeletons first, so a token
+/// carrying multibyte characters simply will not match — correct here, because
+/// homoglyphs are folded upstream and anything left is genuinely foreign.
+///
+/// The early exit is what keeps this cheap. Rows are abandoned the moment every
+/// cell in them exceeds the budget, so the usual case — two words that share no
+/// prefix — costs one row, not a full matrix.
+fn within_edits(a: &str, b: &str, max: usize) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
-    let (long, short) = if a.len() >= b.len() { (a, b) } else { (b, a) };
-    if long.len() - short.len() > 1 {
+    if a.len().abs_diff(b.len()) > max {
         return false;
     }
-    let (mut i, mut j, mut edited) = (0usize, 0usize, false);
-    while i < long.len() && j < short.len() {
-        if long[i] == short[j] {
-            i += 1;
-            j += 1;
-            continue;
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut cur = vec![0usize; b.len() + 1];
+    for (i, &ca) in a.iter().enumerate() {
+        cur[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            cur[j + 1] = (prev[j + 1] + 1)
+                .min(cur[j] + 1)
+                .min(prev[j] + usize::from(ca != cb));
         }
-        if edited {
+        if cur.iter().min().is_some_and(|&m| m > max) {
             return false;
         }
-        edited = true;
-        if long.len() == short.len() {
-            i += 1;
-            j += 1;
-        } else {
-            i += 1;
-        }
+        std::mem::swap(&mut prev, &mut cur);
     }
-    true
+    prev[b.len()] <= max
 }
 
 /// Fold visually-confusable glyphs onto one representative each, so `pa55w0rd`,
@@ -1146,17 +1154,34 @@ mod feeler_tests {
     use super::*;
 
     #[test]
-    fn one_edit_boundary_holds() {
-        assert!(within_one_edit("passwrd", "password")); // deletion
-        assert!(within_one_edit("pasword", "password")); // deletion
-        assert!(within_one_edit(
-            "passwOrd".to_ascii_lowercase().as_str(),
-            "password"
-        ));
-        assert!(within_one_edit("password", "password")); // identity
-                                                          // Two edits is where it must stop, or the noun stops meaning anything.
-        assert!(!within_one_edit("passed", "password"));
-        assert!(!within_one_edit("pwd", "password"));
+    fn edit_budget_boundary_holds() {
+        let near = |w| within_edits(w, "password", MAX_NOUN_EDITS);
+        assert!(near("password")); // identity
+        assert!(near("passwrd")); // one deletion
+        assert!(near("pasword")); // one deletion
+        assert!(near("passwrod")); // one transposition, which costs two
+        assert!(near("paswrd")); // two deletions
+
+        // German, and the reason the budget is two: a substituted vowel plus a
+        // dropped consonant still reads as the word to anything but a matcher.
+        assert!(within_edits("puswort", "passwort", MAX_NOUN_EDITS));
+
+        // Where it must stop, or the noun stops meaning anything.
+        assert!(!near("passed"));
+        assert!(!near("pwd"));
+        assert!(!near("parse"));
+    }
+
+    /// The budget is a *cost* decision, so guard it as one: a third edit starts
+    /// matching real words, and the feeler pays for every match with a
+    /// classifier call on text that was innocent.
+    #[test]
+    fn a_third_edit_would_be_too_many() {
+        assert!(!within_edits("passed", "password", MAX_NOUN_EDITS));
+        assert!(
+            within_edits("passed", "password", 3),
+            "distance is exactly 3"
+        );
     }
 
     /// The guard on the data file, not on the code.

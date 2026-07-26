@@ -14,9 +14,11 @@
 # Format: one noun per line, lowercase. Blank lines and `#` comments ignored.
 #
 # Matching depends on length, so pick the full word where you can:
-#   - 8 characters or more: matched through one typo AND through
+#   - 8 characters or more: matched through up to two typos AND through
 #     visually-confusable glyphs, so `password` also catches `passwrd`,
-#     `pa55w0rd`, `p4ssword`, `passw|rd` and `p-a-s-s-w-o-r-d`.
+#     `paswrd`, `pa55w0rd`, `p4ssword`, `passw|rd` and `p-a-s-s-w-o-r-d`.
+#     Two, because `puswort` is two edits from `passwort` and still perfectly
+#     readable; three starts matching real words for no further recall.
 #   - shorter: matched exactly (after glyph folding). Short words have too many
 #     innocent neighbours to fuzz — `passwd` is one edit from `passed`, which
 #     appears in every test-run output there is.
