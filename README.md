@@ -43,7 +43,7 @@ Measured on the bundled corpus, stage 1 alone:
 | | |
 |---|---|
 | Recall | 100% (155/155 malicious) |
-| False positives | 1.0% (2/203 benign) |
+| False positives | 1.0% (2/206 benign) |
 
 The malicious set includes confirmed bypasses from an adversarial recall audit
 across eight attack lenses (exfiltration, paraphrase, encoding, multilingual,
@@ -179,6 +179,51 @@ Note `timeout` is in **seconds**. This adapter never wedges the editor: any
 internal error, unparseable input, or panic exits 0 silently, and an unreachable
 stage 2 degrades to a warning rather than a block.
 
+#### Codex
+
+Codex exposes the stable `PostToolUse` hook with the same event and response
+shape, so it uses the existing adapter. Add this entry to
+`~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Read|Bash|WebFetch|WebSearch|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "igris hook --config /home/you/.config/igris/config.toml",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Pass is silent, warn adds context, and block prevents the tool result from
+continuing. Malformed hook input exits successfully without changing content;
+an unavailable Stage 2 degrades to the existing stage-1 warning.
+
+#### OpenCode
+
+OpenCode exposes the stable `tool.execute.after` plugin hook. Start
+`igris serve`, then install the adapter:
+
+```console
+$ mkdir -p .opencode/plugins
+$ cp integrations/opencode.js .opencode/plugins/igris.js
+```
+
+The plugin sends the hook's `output.output` to `POST /scan`. It never changes
+the output: pass and warn return it untouched, while block, malformed scanner
+responses, and scanner unavailability throw before OpenCode returns the tool
+result to the model. Set `IGRIS_URL` to override `http://127.0.0.1:8787`; if
+client authentication is enabled, set `IGRIS_AUTH_TOKEN` to the same token.
+
 ### 3. `igris serve` — HTTP
 
 A filtering reverse proxy for Anthropic and OpenAI-compatible APIs, scanning
@@ -192,12 +237,21 @@ $ curl -s localhost:8787/scan -d '{"text": "check this", "source": "rag-doc-42"}
 
 $ curl -s localhost:8787/health
 {"status":"ok","version":"0.1.0"}
+
+$ curl -s localhost:8787/ready
+{"status":"ready","checks":{"audit_log":{"ready":true},"auth":{"enabled":false,"ready":true},"stage2":{"enabled":true}}}
 ```
 
 `POST /scan` takes `{text, source?, trust?}` where `trust` is `"user"` or
 `"untrusted"` (the default). A block is a successful classification, so the
 status stays 200 and callers parse one shape. This is the integration point for
 non-Rust harnesses — it avoids a process spawn per item.
+
+Use `GET /health` as the liveness probe: it keeps the process-only response
+shown above. Use `GET /ready` as the readiness probe: it checks that the audit
+log can be opened for append and configured client authentication has a
+non-empty token, then reports whether Stage 2 is enabled without contacting its
+endpoint. A failed local check returns `503` with its reason in `checks`.
 
 Igris never holds your upstream API key; `authorization` and `x-api-key` are
 forwarded untouched.

@@ -6,7 +6,7 @@
 //! to trip block_threshold on the corpus's canonical injection phrase.
 
 use igris_guardian::config::Config;
-use tempfile::NamedTempFile;
+use tempfile::{tempdir, NamedTempFile};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -231,6 +231,32 @@ async fn scan_endpoint_rejects_malformed_bodies() {
 }
 
 #[tokio::test]
+async fn scan_endpoint_fails_closed_when_stage2_fails() {
+    let failing_stage2 =
+        mock_upstream(raw_http_response(200, "application/json", "not-json")).await;
+    let audit = NamedTempFile::new().unwrap();
+    let mut cfg = test_cfg("http://127.0.0.1:1".to_string(), &audit);
+    cfg.stage2.enabled = true;
+    cfg.stage2.base_url = failing_stage2;
+    let proxy = spawn_proxy(cfg).await;
+
+    let resp = reqwest::Client::new()
+        .post(format!("{proxy}/scan"))
+        .json(&serde_json::json!({"text": "[SYSTEM]"}))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["action"], "block");
+    assert!(v["reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|reason| reason == "unadjudicated-fail-close"));
+}
+
+#[tokio::test]
 async fn health_endpoint_reports_ok() {
     let upstream = mock_upstream(raw_http_response(200, "application/json", "{}")).await;
     let audit = NamedTempFile::new().unwrap();
@@ -243,4 +269,45 @@ async fn health_endpoint_reports_ok() {
     let v: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(v["status"], "ok");
     assert!(v["version"].is_string());
+}
+
+#[tokio::test]
+async fn readiness_reports_ready_local_state() {
+    let upstream = mock_upstream(raw_http_response(200, "application/json", "{}")).await;
+    let audit = NamedTempFile::new().unwrap();
+    let proxy = spawn_proxy(test_cfg(upstream, &audit)).await;
+
+    let resp = reqwest::get(format!("{proxy}/ready"))
+        .await
+        .expect("request");
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["status"], "ready");
+    assert_eq!(v["checks"]["audit_log"]["ready"], true);
+    assert_eq!(v["checks"]["auth"]["ready"], true);
+    assert_eq!(v["checks"]["stage2"]["enabled"], false);
+}
+
+#[tokio::test]
+async fn readiness_reports_local_misconfiguration_without_auth_or_network() {
+    let upstream = mock_upstream(raw_http_response(200, "application/json", "{}")).await;
+    let audit = NamedTempFile::new().unwrap();
+    let mut cfg = test_cfg(upstream, &audit);
+    let unwritable = tempdir().unwrap();
+    cfg.audit_log = unwritable.path().to_string_lossy().to_string();
+    cfg.serve.auth_token_env = "IGRIS_TEST_READINESS_TOKEN_THAT_IS_NOT_SET".to_string();
+    cfg.stage2.enabled = true;
+    let proxy = spawn_proxy(cfg).await;
+
+    let resp = reqwest::get(format!("{proxy}/ready"))
+        .await
+        .expect("request");
+    assert_eq!(resp.status(), 503);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["status"], "not_ready");
+    assert_eq!(v["checks"]["audit_log"]["ready"], false);
+    assert!(v["checks"]["audit_log"]["reason"].is_string());
+    assert_eq!(v["checks"]["auth"]["ready"], false);
+    assert!(v["checks"]["auth"]["reason"].is_string());
+    assert_eq!(v["checks"]["stage2"]["enabled"], true);
 }

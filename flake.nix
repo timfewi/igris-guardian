@@ -6,10 +6,29 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+    }:
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        module = nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [
+            self.nixosModules.default
+            {
+              services.igris-guardian = {
+                enable = true;
+                configFile = builtins.toFile "igris-config.toml" "";
+                environmentFile = builtins.toFile "igris.env" "";
+              };
+            }
+          ];
+        };
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
@@ -27,9 +46,20 @@
             rust-analyzer
           ];
         };
+
+        checks.module = pkgs.runCommand "igris-module-${system}" {
+          execStart = module.config.systemd.services.igris-guardian.serviceConfig.ExecStart;
+        } "touch $out";
       }
-    ) // {
-      nixosModules.default = { config, lib, pkgs, ... }:
+    )
+    // {
+      nixosModules.default =
+        {
+          config,
+          lib,
+          pkgs,
+          ...
+        }:
         with lib;
         let
           cfg = config.services.igris-guardian;
@@ -86,7 +116,10 @@
                 PrivateTmp = true;
                 NoNewPrivileges = true;
                 CapabilityBoundingSet = "";
-                RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
+                RestrictAddressFamilies = [
+                  "AF_INET"
+                  "AF_INET6"
+                ];
                 SystemCallFilter = [ "@system-service" ];
                 SystemCallErrorNumber = "EPERM";
 

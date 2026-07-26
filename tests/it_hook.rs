@@ -1,4 +1,4 @@
-//! Integration test for `igris hook` adapter. PHASE-2A.
+//! Integration tests for the Claude Code/Codex `igris hook` adapter. PHASE-2A.
 //!
 //! Spawns the built binary, pipes a fabricated Claude Code hook JSON payload on
 //! stdin, and validates the emitted hook-protocol JSON / exit code.
@@ -62,7 +62,7 @@ fn user_prompt_submit_blocks_dan_injection() {
 }
 
 #[test]
-fn post_tool_use_read_blocks_injected_content() {
+fn codex_post_tool_use_read_blocks_injected_content() {
     let config = stage2_disabled_config();
     let payload = serde_json::json!({
         "hook_event_name": "PostToolUse",

@@ -1,4 +1,4 @@
-//! `igris hook` — Claude Code hook adapter. PHASE-2A.
+//! `igris hook` — Claude Code and Codex hook adapter. PHASE-2A.
 //!
 //! Reads one hook JSON object on stdin, dispatches on `hook_event_name`
 //! (UserPromptSubmit, PostToolUse), emits hook-protocol JSON. FailMode::DegradeStage1.

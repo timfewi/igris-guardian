@@ -12,7 +12,7 @@ fn usage() -> ! {
          USAGE:\n\
          \x20 igris scan [--config PATH] [--trust user] [TEXT]\n\
          \x20                                     scan stdin/arg, print JSON verdict\n\
-         \x20 igris hook [--config PATH]          Claude Code hook adapter (stdin JSON)\n\
+         \x20 igris hook [--config PATH]          Claude Code/Codex hook adapter (stdin JSON)\n\
          \x20 igris serve [--config PATH]         filtering reverse proxy\n\
          \x20 igris console [--config PATH]       live audit-log dashboard (read-only)\n\
          \n\

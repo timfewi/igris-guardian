@@ -9,6 +9,14 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  nix-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Evaluate all supported systems
+        run: nix flake check --all-systems --no-build
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -26,6 +34,9 @@ jobs:
 
       - name: Test
         run: cargo test --all-targets
+
+      - name: OpenCode adapter
+        run: node --test integrations/opencode.test.mjs
 
       # The corpus numbers are the product's actual claim, so print them on every
       # run rather than leaving them to a README assertion nobody re-measures.

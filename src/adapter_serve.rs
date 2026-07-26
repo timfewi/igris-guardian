@@ -17,6 +17,7 @@ use hyper::{Method, Request, Response};
 use hyper_util::rt::TokioIo;
 use serde_json::{json, Value};
 use std::convert::Infallible;
+use std::fs::OpenOptions;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
@@ -60,6 +61,12 @@ async fn handle(
     client: reqwest::Client,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     let cfg = engine.config();
+
+    // Readiness must remain reachable when client auth itself is misconfigured,
+    // otherwise an orchestrator only sees the auth guard's generic 503.
+    if req.method() == Method::GET && req.uri().path() == "/ready" {
+        return Ok(readiness_response(cfg));
+    }
 
     if !cfg.serve.auth_token_env.is_empty() {
         let expected = std::env::var(&cfg.serve.auth_token_env).unwrap_or_default();
@@ -198,6 +205,38 @@ async fn handle(
 
     // Pass: replay upstream bytes/status/headers byte-identical.
     Ok(build_response(status, &resp_headers, resp_bytes))
+}
+
+fn readiness_response(cfg: &Config) -> Response<Full<Bytes>> {
+    let audit = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(cfg.audit_path());
+    let auth_enabled = !cfg.serve.auth_token_env.is_empty();
+    let auth_ready = !auth_enabled
+        || std::env::var(&cfg.serve.auth_token_env).is_ok_and(|token| !token.is_empty());
+    let ready = audit.is_ok() && auth_ready;
+
+    let mut audit_check = json!({"ready": audit.is_ok()});
+    if let Err(error) = audit {
+        audit_check["reason"] = json!(error.to_string());
+    }
+    let mut auth_check = json!({"enabled": auth_enabled, "ready": auth_ready});
+    if !auth_ready {
+        auth_check["reason"] = json!("configured token environment variable is missing or empty");
+    }
+
+    json_response(
+        if ready { 200 } else { 503 },
+        json!({
+            "status": if ready { "ready" } else { "not_ready" },
+            "checks": {
+                "audit_log": audit_check,
+                "auth": auth_check,
+                "stage2": {"enabled": cfg.stage2.enabled}
+            }
+        }),
+    )
 }
 
 /// `POST /scan` — classify a body of text and return the verdict verbatim.
